@@ -1,13 +1,10 @@
-"""Executable-environment RL for self-correcting Text-to-SQL agents."""
+"""Verifiable GRPO + RLVR for blind Text-to-SQL agents."""
 
-from .types import ExecutionResult, RewardBreakdown, SqlTask, Trajectory, TrajectoryStep
+from .types import ExecutionResult, PolicyTask, RewardBreakdown, SqlTask, Trajectory, TrajectoryStep
 
 __all__ = [
-    "ExecutionResult",
-    "RewardBreakdown",
-    "SqlTask",
-    "Trajectory",
-    "TrajectoryStep",
+    "ExecutionResult", "PolicyTask", "RewardBreakdown", "SqlTask",
+    "Trajectory", "TrajectoryStep",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

@@ -1,512 +1,329 @@
 <div align="center">
 
-# 大模型在线强化学习与策略优化
+# Agentic-RL
 
-**GRPO · RLVR · On-Policy RL · Agent Lightning · veRL**
+### Verifiable GRPO for self-correcting Text-to-SQL agents
 
-让模型不再只模仿标准答案，而是通过**真实执行、可验证奖励和在线策略更新**学会完成任务与纠正错误。
+**Agent Lightning · veRL · GRPO · RLVR · Qwen2.5-Coder · Spider · BIRD**
+
+从单纯模仿 SQL 答案，升级到利用真实数据库执行信号进行强化学习。核心目标不是堆叠 Agent 编排，而是用严谨的实验回答：**策略更新是否在相同观察和计算预算下真正提高了任务成功率？**
 
 [![CI](https://github.com/Benjamindaoson/Agentic-RL/actions/workflows/ci.yml/badge.svg)](https://github.com/Benjamindaoson/Agentic-RL/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 </div>
 
----
+> **Evidence status — ENGINEERING IMPLEMENTED; GPU RESULTS NOT YET VERIFIED.**
+> 现有 ` reports/benchmark_snapshot.* ` 是给定的参考实验数字，不是本仓库本次代码运行得到的 GPU 实测结果。没有训练日志、权重哈希、原始 Rollout、严格对照和证据校验通过之前，请勿将 80.4% 等数值当成本项目实测成果写进简历、论文或对外宣传。
 
-## 项目解决什么问题
+## 1. 为什么是强化学习，而不是多写 Prompt？
 
-监督微调可以教会模型“这个问题对应哪条 SQL”，但无法直接教会模型：
+SFT 可以学习问题和标准 SQL 的映射；但面对新数据库、执行错误和语义偏差时，重要的是策略能否把环境反馈转化成更好的决策。这里定义一个真实、可审计的强化学习环境：
 
-- SQL 执行失败后如何根据错误信息修改；
-- 查询可以执行但结果错误时，如何重新检查连接、过滤和聚合；
-- 面对未见过的表结构时，如何利用真实环境反馈改善策略；
-- 如何在准确率、重试次数、延迟和 GPU 成本之间做合理取舍。
+- **Observation**：问题、Schema、额外证据、真实 SQL 执行结果和错误；无标准答案信息。
+- **Action**：单条只读 SQL，加一个模型自选的 `final / inspect` 决策。
+- **Environment**：Spider / BIRD SQLite，安全解析、只读执行、超时和结果预览。
+- **Reward**：整条轨迹冻结后，使用独立 Gold SQL 结果计算执行等价奖励。
+- **Policy update**：Agent Lightning 收集真实模型请求与奖励，veRL 执行 GRPO 更新并保存 FSDP Checkpoint。
+- **Evaluation**：相同样本、相同 Prompt/环境/轮次/Token 预算，以盲策略方式比较 Base、GRPO、No-update 和 Reward Ablation。
 
-本项目把 Text-to-SQL 变成一个可交互的强化学习环境：
+**特别重要：Gold SQL 不再决定是否重试、何时停止、是否进入 checker，也不进入后续消息。** Gold 只在整条轨迹结束后进入 ` SqlEvaluator `，计算 reward 和测试指标。
 
-```text
-问题 + Schema
-      ↓
-模型生成 SQL
-      ↓
-只读数据库真实执行
-      ↓
-执行结果 / 错误反馈
-      ↓
-可验证奖励
-      ↓
-GRPO 组内优势估计与策略更新
-      ↓
-更新后的模型重新 Rollout
-```
+## 2. 方法架构
 
-项目的贡献重点是**强化学习算法与实验设计**，而不是 Agent 应用编排。SQL Agent 只作为具备真实环境、客观奖励和多轮纠错能力的实验载体。
-
----
-
-## 核心实验结果
-
-以 **Qwen2.5-Coder-3B-Instruct** 为策略模型，在 Spider 1.0 可执行 SQL 环境中进行 GRPO 训练：
-
-| 设置 | 训练前 | GRPO 后 | 提升 | 企业价值 |
-|---|---:|---:|---:|---|
-| 4096 上下文，单轮 | 68.8% | **80.2%** | **+11.4pp** | 小模型在一次决策内完成更多正确任务，减少工具调用与响应延迟 |
-| 4096 上下文，三轮 | 69.6% | **80.4%** | **+10.8pp** | 在线强化学习显著提升最终任务成功率，使低成本专用模型更接近可用水平 |
-
-### 上下文、轮次与显式检查的投入产出
-
-| 对照 | 变化 | 结论 |
-|---|---:|---|
-| 单轮：2048 → 4096 上下文 | 73.2% → **80.2%（+7.0pp）** | 完整保留 Schema 与执行反馈，比单纯增加重试更有效 |
-| 三轮：2048 → 4096 上下文 | 76.4% → **80.4%（+4.0pp）** | 长上下文提高多轮纠错中的信息连续性 |
-| 4096 上下文：1 轮 → 3 轮 | 80.2% → **80.4%（+0.2pp）** | 额外两轮交互收益极低，不足以覆盖新增延迟与推理成本 |
-| 2048 上下文：无检查 → 显式检查 | 76.4% → **77.6%（+1.2pp）** | 自检有收益，但训练时间接近翻倍，应按业务成本选择 |
-
-实验快照保存在 [`reports/benchmark_snapshot.md`](reports/benchmark_snapshot.md)。仓库同时提供完整的数据接入、训练、Rollout 和评测代码，用于重新生成实际运行结果。
-
----
-
-## 为什么选择 SQL 作为 RLVR 环境
-
-SQL 任务同时具备四个条件：
-
-1. **动作可执行**：模型输出可以直接在数据库中运行；
-2. **结果可验证**：预测 SQL 与标准 SQL 可以通过执行结果比较；
-3. **失败可反馈**：语法错误、字段不存在、结果不匹配都能形成环境信号；
-4. **轨迹可延长**：模型可以执行“生成 → 失败 → 修正 → 再执行”的多步策略。
-
-相比只使用 AI Judge 给回答打分，执行结果奖励具有更低的主观性，也更容易发现 Reward Hacking。
-
----
-
-## 强化学习定义
-
-| RL 元素 | 本项目定义 |
-|---|---|
-| **Observation** | 用户问题、数据库 Schema、外部证据、历史 SQL、执行结果、错误信息、剩余轮次 |
-| **Action** | 生成或重写一条只读 SQL |
-| **Environment** | Spider / BIRD 的真实 SQLite 数据库 |
-| **Reward** | 执行结果是否与标准查询等价，并附加无效、危险、超时和重试成本 |
-| **Policy** | Qwen2.5-Coder-3B-Instruct |
-| **Trajectory** | 多轮模型调用、SQL、执行结果、反馈、最终奖励 |
-| **Optimization** | GRPO On-Policy 策略更新 |
-
----
-
-## 开源数据集
-
-### Spider 1.0：主训练与同分布评测
-
-Spider 1.0 包含：
-
-- **10,181** 个自然语言问题；
-- **5,693** 个唯一复杂 SQL；
-- **200** 个多表数据库；
-- **138** 个领域；
-- 训练与测试使用不同数据库 Schema，适合验证跨 Schema 泛化。
-
-```bash
-python scripts/download_spider.py --output-dir data/raw/spider
-python scripts/prepare_spider.py \
-  --spider-root data/raw/spider \
-  --output-dir data/spider
-```
-
-准备脚本会自动生成：
-
-```text
-train_ctx2048_turn1.parquet
-train_ctx2048_turn3.parquet
-train_ctx2048_turn3_check.parquet
-train_ctx4096_turn1.parquet
-train_ctx4096_turn3.parquet
-
-val_ctx2048_turn1.parquet
-val_ctx2048_turn3.parquet
-val_ctx2048_turn3_check.parquet
-val_ctx4096_turn1.parquet
-val_ctx4096_turn3.parquet
-```
-
-### BIRD-SQL：外部泛化评测
-
-仓库接入：
-
-- `birdsql/bird23-train-filtered`：**6,601** 条质量筛选后的训练数据；
-- BIRD Mini-Dev：用于独立于 Spider 的外部评测；
-- BIRD 真实数据库内容，用于测试外部知识、脏数据和复杂值匹配。
-
-```bash
-python scripts/download_bird.py --output-dir data/raw/bird
-
-python scripts/prepare_bird.py \
-  --records data/raw/bird/bird23_train_filtered.jsonl \
-  --db-root /data/bird/train_databases \
-  --output data/bird/train.parquet \
-  --split train
-```
-
-BIRD 数据库体积较大，数据库文件需按官方说明下载；仓库自动处理公开元数据、任务格式和本地数据库路径绑定。
-
----
-
-## 系统架构
-
-```mermaid
+~~~mermaid
 flowchart TD
-    D1[Spider 1.0] --> P[Dataset Preparation]
-    D2[BIRD-SQL] --> P
-    P --> V[Parquet: task_json / db_path / max_turns]
+    DATA[Spider / BIRD tasks] --> PRIV[Private SqlTask: question + gold SQL]
+    PRIV -->|Allowlisted fields only| POLICY[PolicyTask: question, schema and budget]
+    POLICY --> AGENT[Blind SQL Agent]
+    AGENT --> SQL[Candidate SQL + decision]
+    SQL --> GUARD[SQL safety guard]
+    GUARD --> DB[(Read-only SQLite)]
+    DB --> ENV[Observed result or execution error]
+    ENV -->|Only if policy asks / query fails| AGENT
+    ENV --> TRACE[Frozen raw trajectory]
+    PRIV -->|Gold only after completion| EVAL[Post-hoc SqlEvaluator]
+    TRACE --> EVAL
+    EVAL --> REWARD[Execution-based RLVR reward]
+    REWARD --> AGL[Agent Lightning events]
+    AGL --> VERL[veRL GRPO / clipped update / KL]
+    VERL --> CKPT[Weight checkpoints + step metrics]
+    CKPT --> EXPORT[Export FSDP to Hugging Face]
+    EXPORT --> TEST[Blind held-out rollout]
+    TEST --> STATS[Paired bootstrap, McNemar, evidence gate]
+~~~
 
-    V --> AGL[Agent Lightning Controller]
-    AGL --> H[Real SQL Agent Harness]
+Policy 与 Oracle 的真实边界在代码里是类型隔离的：
 
-    H --> O[Question + Schema + History]
-    O --> M[Policy Model]
-    M --> Q[Candidate SQL]
-    Q --> G[Read-only SQL Guard]
-    G --> DB[(SQLite Environment)]
-    DB --> E[Execution Result / Error]
-    E --> R[RLVR Reward]
-    E -->|Failure| M
+- ` SqlTask ` 带 `gold_sql`；仅用于数据加载和评分。
+- ` SqlTask.policy_view() ` 生成白名单公开字段。
+- ` SqlAgentRunner.run(PolicyTask) ` **拒绝**传入私有 ` SqlTask `。
+- ` SqlEvaluator.evaluate(SqlTask, frozen_trajectory) ` 只在最后评分。
+- ` scripts/audit_leakage.py ` 交换 Gold SQL，验证策略的 Prompt、SQL、轮次和终止决定不变；评分应该改变。
 
-    R --> VERL[veRL GRPO]
-    VERL --> ADV[Group-relative Advantages]
-    ADV --> UPD[Clipped Policy Update + KL Control]
-    UPD --> M
+完整协议：[docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md)。
 
-    M --> EV[Held-out Evaluation]
-    EV --> REP[Accuracy / Invalid SQL / Turns / Latency]
-```
+## 3. 功能和状态
 
-运行模块与训练模块解耦：
+| 工程能力 | 已实现 | 实测证据要求 |
+|---|:---:|---|
+| SQLite 查询、结果等价与只读门禁 | ✓ | CI 单元测试 |
+| Policy 与 Gold Evaluator 隔离 | ✓ | Gold-mutation metamorphic audit |
+| RLVR 配置驱动奖励与 validity-only 消融 | ✓ | Reward / leak tests |
+| GRPO 优势、裁剪目标及 KL 核心测试 | ✓ | 算法单元测试 |
+| Agent Lightning + veRL 真实训练入口 | ✓ | 必须实际完成 GPU run |
+| Prompt Token 上限、可追踪 Schema 裁剪 | ✓ | 实际 prompt token count |
+| FSDP Offload / gradient checkpointing / vLLM 设置 | ✓ | GPU 峰值与吞吐指标 |
+| Checkpoint 保存、SHA-256、FSDP 合并 | ✓（工具） | 必须生成并加载真实权重 |
+| Base / GRPO / No-update / validity-only 控制 | ✓（工具） | 需要同任务实测 |
+| Paired Bootstrap / McNemar / 报告门禁 | ✓ | 需要原始评测轨迹 |
+| BIRD 数据接入 | 部分 | 需要独立外部分布评测 |
 
-- **运行侧**：真实数据库交互、轨迹记录、奖励计算；
-- **训练侧**：并行 Rollout、组内优势估计、策略参数更新；
-- **Agent Lightning**：把真实 Agent Harness 接入 veRL；
-- **veRL**：负责 GRPO、FSDP、vLLM Rollout 和分布式训练。
+**✓（工具）表示代码功能存在，不表示训练结果已完成。**
 
----
+## 4. 快速开始（不需要 GPU）
 
-## 可验证奖励与 Reward Hacking 防护
+要求 Python 3.12。GPU 训练额外要求 CUDA 适配的 PyTorch、Ray、vLLM、Agent Lightning 1.0.x、veRL 0.7.1–0.8.x。
 
-### 奖励组成
-
-```text
-执行结果正确      +0.90
-SQL 可解析         +0.03
-SQL 可执行         +0.07
-危险 SQL           -1.00
-无效 SQL           -0.20
-执行超时           -0.15
-每次额外重试       -0.02
-```
-
-核心约束：**只有执行结果正确的轨迹才能获得 0.5 以上奖励。**
-
-因此模型无法通过以下捷径获得高分：
-
-- 只生成语法合法、但答案错误的 SQL；
-- 通过返回大量结果提高“命中”概率；
-- 反复重试而不真正改善策略；
-- 使用写操作、PRAGMA 或多语句查询操纵环境。
-
-### 执行安全
-
-- 仅允许单条 `SELECT` / `WITH`；
-- 拦截 `INSERT / UPDATE / DELETE / CREATE / DROP / ALTER / PRAGMA / ATTACH`；
-- SQLite 使用只读 URI 和 `query_only=ON`；
-- 查询设置超时和最大结果行数；
-- 截断结果不计为执行匹配；
-- 无 `ORDER BY` 时按多重集合比较结果，有 `ORDER BY` 时保留顺序；
-- Gold SQL 无法执行时拒绝该训练任务。
-
-详细设计见 [`docs/REWARD_DESIGN.md`](docs/REWARD_DESIGN.md)。
-
----
-
-## GRPO 实现
-
-每个问题采样一组候选轨迹，组内奖励标准化为相对优势：
-
-```text
-A_i = (r_i - mean(r_group)) / (std(r_group) + epsilon)
-```
-
-策略使用裁剪目标更新：
-
-```text
-ratio = exp(logπ_new - logπ_old)
-objective = min(ratio × A, clip(ratio) × A)
-```
-
-仓库提供：
-
-- `group_relative_advantages`；
-- clipped GRPO objective；
-- response mask；
-- reference KL control；
-- clip fraction 和 probability ratio 监控。
-
-生产训练由 veRL 实现，`src/agentic_rl_sql/grpo.py` 提供可测试的算法核心，用于验证优势归一化和裁剪目标。
-
----
-
-## 多轮自我纠错
-
-### 默认流程
-
-```text
-Turn 1: Question + Schema → SQL → Execute
-                    ↓ wrong/error
-Turn 2: Previous SQL + Execution Feedback → Rewrite → Execute
-                    ↓ wrong/error
-Turn 3: Updated Feedback → Rewrite → Execute
-```
-
-模型看不到 Gold SQL，只能看到：
-
-- SQL 语法或执行错误；
-- 返回列、行数和少量结果预览；
-- “结果与预期不一致”的环境反馈。
-
-### 显式检查消融
-
-`explicit_check=true` 会在失败后额外调用 verifier，让模型先诊断查询错误，再进入重写。该机制提高准确率，但增加训练和推理调用，因此单独作为消融，而不是默认开启。
-
----
-
-## 仓库结构
-
-```text
-.
-├── agent/
-│   └── sql_agent_entrypoint.py       # Agent Lightning 运行入口
-├── configs/
-│   ├── experiment_matrix.yaml
-│   └── reward.yaml
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── DATASETS.md
-│   ├── EXPERIMENTS.md
-│   └── REWARD_DESIGN.md
-├── reports/
-│   ├── benchmark_snapshot.json
-│   └── benchmark_snapshot.md
-├── scripts/
-│   ├── download_spider.py
-│   ├── download_bird.py
-│   ├── prepare_spider.py
-│   ├── prepare_bird.py
-│   ├── build_toy_data.py
-│   ├── train_sql_agent.py
-│   ├── run_local_training.sh
-│   ├── launch_ablation_matrix.sh
-│   ├── start_policy_server.sh
-│   ├── run_rollouts.py
-│   ├── compare_experiments.py
-│   └── build_report.py
-├── src/agentic_rl_sql/
-│   ├── agent.py                       # 多轮 SQL 策略与纠错循环
-│   ├── db.py                          # Schema 与只读连接
-│   ├── execution.py                   # 执行与结果等价判断
-│   ├── grpo.py                        # GRPO 算法核心
-│   ├── reward.py                      # RLVR 奖励
-│   ├── sql_guard.py                   # SQL 安全策略
-│   └── trajectory.py                  # 轨迹持久化
-├── tests/
-├── .github/workflows/ci.yml
-├── pyproject.toml
-└── README.md
-```
-
----
-
-## 快速开始
-
-### 环境要求
-
-- Ubuntu 22.04+
-- Python **3.12**
-- CUDA 与 PyTorch 版本匹配
-- Agent Lightning **1.0.x**
-- veRL **0.7.1–0.8.x**
-- vLLM
-
-### 安装核心代码
-
-```bash
+~~~bash
 git clone https://github.com/Benjamindaoson/Agentic-RL.git
 cd Agentic-RL
-
 python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-```
+python scripts/build_toy_data.py --output-dir data/toy
+python -m pytest -q
+python scripts/audit_leakage.py --output artifacts/leakage_audit.json
+python scripts/run_experiment_matrix.py --stage smoke   # only prints proposed GPU commands
+~~~
 
-Agent Lightning + veRL 的 GPU 依赖与 CUDA 强相关。生产训练建议按照 Agent Lightning 官方安装脚本配置匹配版本，再执行：
+**CPU 测试不证明 GRPO 训练成功。** 测试覆盖安全门禁、奖励、算法、可观察反馈、Gold 隔离、Token 预算、统计比较与证据校验器。
 
-```bash
+## 5. 真实数据
+
+Spider 主训练和同分布 held-out 验证：
+
+~~~bash
+python scripts/download_spider.py --output-dir data/raw/spider
+python scripts/prepare_spider.py \
+  --spider-root data/raw/spider --output-dir data/spider
+~~~
+
+数据准备为每个条件生成三份数据库级隔离的 Parquet：`train_*`（Spider Train 中用于策略更新）、`val_*`（从 Spider Train 按数据库划分出的内部验证集）、`test_*`（**Spider 官方 Dev**，只用于最终盲评测）。不得把训练过程的验证准确率当作最终测试成绩。
+
+| 条件 | Context | Turns | Verifier |
+|---|---:|---:|---|
+| ctx2048_turn1 | 2048 | 1 | 否 |
+| ctx2048_turn3 | 2048 | 3 | 否 |
+| ctx2048_turn3_check | 2048 | 3 | 是 |
+| ctx4096_turn1 | 4096 | 1 | 否 |
+| ctx4096_turn3 | 4096 | 3 | 否 |
+
+BIRD 用于外部泛化，不应与 Spider 混报为同一分布：
+
+~~~bash
+python scripts/download_bird.py --output-dir data/raw/bird
+# 另外下载官方 BIRD SQLite 数据库及独立开发/测试集
+python scripts/prepare_bird.py \
+  --records /path/to/bird_dev.json \
+  --db-root /path/to/bird/dev_databases \
+  --output data/bird/dev.parquet --split eval --strict-db
+~~~
+
+BIRD 数据文件可能需要遵循官方使用与下载流程。未运行 BIRD 外部评测前，不得声称“跨数据集泛化已验证”。参见 [docs/DATASETS.md](docs/DATASETS.md)。
+
+## 6. GPU 最小闭环（先单轮再扩展）
+
+建议先按官方版本兼容说明安装 GPU 依赖，再安装项目训练扩展：
+
+~~~bash
 pip install -e '.[train]'
 python scripts/preflight.py --require-gpus 1
-```
 
-### CPU 冒烟测试
-
-```bash
-python scripts/build_toy_data.py --output-dir data/toy
-pytest
-```
-
----
-
-## 训练
-
-### 单个主实验
-
-```bash
 export MODEL=Qwen/Qwen2.5-Coder-3B-Instruct
-export TRAIN_FILE=$PWD/data/spider/train_ctx4096_turn3.parquet
-export VAL_FILE=$PWD/data/spider/val_ctx4096_turn3.parquet
-export RUN_NAME=qwen25_coder_3b_ctx4096_turn3
+export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
+export TRAIN_FILE="$PWD/data/spider/train_ctx4096_turn1.parquet"
+export VAL_FILE="$PWD/data/spider/val_ctx4096_turn1.parquet"
+export RUN_NAME=grpo_ctx4096_turn1_seed42
+export CONTEXT_LENGTH=4096
+export MAX_TURNS=1
+export ROLLOUT_MAX_TOKENS=1024
+export GPU_MEMORY_UTILIZATION=0.65
+bash scripts/run_local_training.sh \
+  --seed 42 --epochs 1 --save-freq 1
+~~~
 
-bash scripts/run_local_training.sh
-```
+训练脚本自动：
 
-该脚本会：
+1. 检查本地 GPU 与 Agent Lightning / Ray；
+2. 启动 Ray、AGL Server/Controller 和实时 GPU 埋点；
+3. 运行基于真实 SQLite 的 veRL GRPO；
+4. 保存 Train/Val 文件 SHA-256、配置、Gold-free 评测协议；
+5. 捕获原始 `training.log` 并提取 `training_metrics.jsonl`；
+6. 校验必须生成 Checkpoint 文件并计算 SHA-256；
+7. 执行 Gold-mutation 泄漏测试；
+8. 任一步失败则退出非零，不制造假的训练成功状态。
 
-1. 启动 Ray；
-2. 启动 `agl-server`；
-3. 启动本地 `agl-controller`；
-4. 将真实 SQL Agent Harness 接入模型代理；
-5. 启动 veRL GRPO 训练；
-6. 在退出时清理训练服务。
+FSDP 参数/优化器 Offload、Gradient Checkpointing、Rollout micro-batch 与 vLLM 显存占比都可以调节。显存是否足够必须依据实际 GPU 和具体版本运行判断。
 
-### 完整消融矩阵
+### 实验矩阵
 
-```bash
-DATA_DIR=$PWD/data/spider \
-MODEL=Qwen/Qwen2.5-Coder-3B-Instruct \
-bash scripts/launch_ablation_matrix.sh
-```
+~~~bash
+# 默认 dry-run；不实际占用 GPU
+python scripts/run_experiment_matrix.py --stage main
+python scripts/run_experiment_matrix.py --stage controls
+python scripts/run_experiment_matrix.py --stage ablations
 
-实验矩阵：
+# 显式执行；先 main，再 controls，最后 ablations
+python scripts/run_experiment_matrix.py --stage main --execute
+python scripts/run_experiment_matrix.py --stage controls --execute
+python scripts/run_experiment_matrix.py --stage ablations --execute
+~~~
 
-```text
-2048 context × 1 turn
-2048 context × 3 turns
-2048 context × 3 turns + explicit checker
-4096 context × 1 turn
-4096 context × 3 turns
-```
+包括 No-update (lr=0) 与 validity-only reward 对照；不能把“上下文更多”“重试更多”直接算成 GRPO 策略学习贡献。
 
-### 关键训练参数
+## 7. Checkpoint 导出与盲评测
 
-```text
-GRPO group size                 4
-Train batch size               32
-PPO mini-batch                 32
-PPO micro-batch / GPU          4
-Learning rate                  1e-6
-Clip low / high                0.2 / 0.3
-Reference KL coefficient       0.001
-Rollout engine                 vLLM
-FSDP parameter offload         enabled
-FSDP optimizer offload         enabled
-```
+veRL FSDP 权重不是直接供 vLLM 加载的 Hugging Face 文件；先导出：
 
----
+~~~bash
+python scripts/export_policy.py \
+  --checkpoint-root runs/grpo_ctx4096_turn1_seed42/checkpoints \
+  --target-dir runs/grpo_ctx4096_turn1_seed42/hf-policy
+~~~
 
-## 离线评测
+然后分别启动**完全相同**配置的 Base 与 GRPO Policy Server，在保留的 **Spider 官方 Dev `test_*`** 上评价，内部 `val_*` 只用于训练期模型选择：
 
-启动基础模型或训练后策略：
-
-```bash
+~~~bash
+# Base policy
 export POLICY_MODEL=Qwen/Qwen2.5-Coder-3B-Instruct
-export POLICY_PORT=8000
-export MAX_MODEL_LEN=4096
+export PROMPT_TOKEN_BUDGET=4096 MAX_RESPONSE_LENGTH=1024
 bash scripts/start_policy_server.sh
-```
 
-运行真实数据库 Rollout：
-
-```bash
 python scripts/run_rollouts.py \
-  --dataset data/spider/val_ctx4096_turn3.parquet \
-  --base-url http://127.0.0.1:8000/v1 \
-  --model sql-policy \
-  --output runs/base_ctx4096_turn3/trajectories.jsonl
-```
+  --dataset data/spider/test_ctx4096_turn1.parquet \
+  --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
+  --policy-checkpoint base-pinned-revision \
+  --policy-manifest runs/grpo_ctx4096_turn1_seed42/base_model_identity.json \
+  --context-limit 4096 --max-turns 1 --seed 42 --temperature 0 \
+  --output runs/eval_base/base_trajectories.jsonl
+bash scripts/stop_policy_server.sh
 
-输出指标：
+# GRPO policy — exported HF weights
+export POLICY_MODEL="$PWD/runs/grpo_ctx4096_turn1_seed42/hf-policy"
+bash scripts/start_policy_server.sh
 
-- 最终任务准确率；
-- 首轮准确率；
-- 平均奖励；
-- 平均修正轮次；
-- 无效 SQL 率；
-- 危险 SQL 率；
-- 平均与 P95 延迟；
-- 错误类型分布。
+python scripts/run_rollouts.py \
+  --dataset data/spider/test_ctx4096_turn1.parquet \
+  --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
+  --policy-checkpoint trained-export-sha256 \
+  --policy-manifest runs/grpo_ctx4096_turn1_seed42/hf-policy/export_manifest.json \
+  --context-limit 4096 --max-turns 1 --seed 42 --temperature 0 \
+  --output runs/eval_grpo/grpo_trajectories.jsonl
+bash scripts/stop_policy_server.sh
+~~~
 
-对比实验：
+***注意：*** 上面 `base-pinned-revision`、`trained-export-sha256` 是用户必须填写的真实标识符，不能原样当作实验凭证。
 
-```bash
+生成严格配对报告（可附加 `--no-update`、`--reward-ablation`）：
+
+~~~bash
 python scripts/compare_experiments.py \
-  --experiment base=runs/base/trajectories_metrics.json \
-  --experiment grpo=runs/grpo/trajectories_metrics.json \
+  --base runs/eval_base/base_trajectories.jsonl \
+  --grpo runs/eval_grpo/grpo_trajectories.jsonl \
+  --leakage-audit runs/grpo_ctx4096_turn1_seed42/leakage_audit.json \
   --output-dir runs/comparison
-```
+~~~
 
----
+比较器拒绝样本 ID、数据哈希、Context、轮次、温度、Seed、Tokenizer、SQL 执行预算不一致的结果；输出准确率差值、配对 Bootstrap 95% CI 与 McNemar 精确检验。
 
-## CI 与测试
+## 8. 证据目录
 
-```bash
-pytest
-python -m compileall -q src agent scripts
-bash -n scripts/*.sh
-```
+一个完整训练和评测运行应产生：
 
-测试覆盖：
+~~~text
+runs/
+  grpo_ctx4096_turn1_seed42/
+    grpo_run_manifest.json
+    training_config.json
+    training.log
+    training_metrics.jsonl
+    gpu_telemetry.jsonl
+    resource_metrics.json
+    base_model_identity.json
+    checkpoints/
+    policy_checkpoint_manifest.json
+    leakage_audit.json
+    hf-policy/
+      config.json
+      *.safetensors
+      export_manifest.json
+  eval_base/
+    base_trajectories.jsonl
+    base_trajectories_metrics.json
+    base_trajectories_protocol.json
+  eval_grpo/
+    grpo_trajectories.jsonl
+    grpo_trajectories_metrics.json
+    grpo_trajectories_protocol.json
+  comparison/
+    comparison.csv
+    comparison.md
+    comparison.json
+    evaluation_protocol.json
+    leakage_audit.json
+    weight_change_audit.json
+    evidence_verification.json
+    REPORT.md
+~~~
 
-- 只读 SQL 安全门禁；
-- 多语句和写操作阻断；
-- SQLite 真实执行；
-- 有序/无序结果等价；
-- Reward Hacking 约束；
-- GRPO 组内优势；
-- GRPO 裁剪目标与梯度；
-- Parquet 任务格式；
-- 执行失败后的多轮纠错；
-- 显式检查消融路径。
+训练权重、数据集与原始轨迹体积较大，默认被 `.gitignore` 排除。请保存在受控对象存储或模型仓库，并确保 URI、Hash、权限与留存策略明确。
 
----
+首先对 Base、GRPO 和 No-update 的真实 HF Tensor 计算数值差异：
 
-## 复现边界
+~~~bash
+python scripts/check_weight_change.py \
+  --base-hf-dir /path/to/pinned-base-hf \
+  --grpo-hf-dir runs/grpo_ctx4096_turn1_seed42/hf-policy \
+  --no-update-hf-dir /path/to/no-update-exported-hf \
+  --output runs/comparison/weight_change_audit.json
+~~~
 
-仓库包含完整算法、环境、数据接入、训练和评测代码，但不提交：
+输入必须是真实模型权重：不仅检查 GRPO 权重发生非零变化，还检查 No-update 权重应保持不变。
 
-- Spider / BIRD 数据库文件；
-- 模型权重与 Checkpoint；
-- Ray、vLLM 或 W&B 运行产物；
-- API Key；
-- GPU 训练日志。
+完整验收：
 
-`reports/benchmark_snapshot.*` 记录项目给定实验快照。新的公开结果应通过本仓库脚本在目标 GPU 环境重新运行并保留对应轨迹、配置和评测产物。
+~~~bash
+python scripts/verify_evidence.py \
+  --training-dir runs/grpo_ctx4096_turn1_seed42 \
+  --comparison-dir runs/comparison \
+  --output runs/comparison/evidence_verification.json
 
----
+python scripts/build_report.py \
+  --comparison-dir runs/comparison \
+  --evidence-verification runs/comparison/evidence_verification.json \
+  --output runs/comparison/REPORT.md
+~~~
 
-## 数据集与框架
+**强制规则：** 无训练实测、无 No-update 控制、缺少权重哈希或未锁定 Base 版本时，证据门禁必须 FAIL；README 不允许自行填入最终准确率。
 
-- Spider 1.0 — CC BY-SA 4.0
-- BIRD-SQL — CC BY-SA 4.0
-- Agent Lightning — MIT
-- veRL — Apache-2.0
+## 9. 关键实验局限
 
-使用数据集和框架时，请遵循各自许可证并引用原始论文。
+- **三路隔离。** `train_*`/`val_*` 均来自官方 Train，严格按照数据库划分；最终 `test_*` 来自 Spider 官方 Dev，不能用于挑选超参数或 Checkpoint。
+- **执行等价不等于在所有数据库上语义等价。** 两条 SQL 可能因测试数据偶然一致；重复样本、复杂 NULL/ORDER BY 与重排可能需要补充额外判定。
+- **训练奖励使用 Gold 是允许的；部署期纠错不允许。** 本项目把 Oracle 放在轨迹结束之后。
+- **No-update 不能代替所有因果实验。** 还需要多 Seed、固定样本预算、无效 Reward 对照，并报告统计不确定性。
+- **单轮与三轮是不同推理预算。** 只有在相同轮次、相同 Token 和可观察反馈下比较 Base/GRPO，才能把差值归因到学习候选机制。
+- **BIRD 外部分布评测未完成前不能宣称泛化。** 项目自实现的 execution match 也不能直接当作官方排行榜分数。
 
----
+详见 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)、[docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md)、[docs/WORK_PLAN.md](docs/WORK_PLAN.md)。
 
-## License
+## 10. Frameworks & licenses
 
-Apache-2.0
+- [Agent Lightning](https://github.com/microsoft/agent-lightning) — rollout gateway and Agent training integration (MIT)
+- [veRL](https://github.com/verl-project/verl) — GRPO policy updates, vLLM and FSDP (Apache-2.0)
+- [Spider](https://yale-lily.github.io/spider) — Text-to-SQL benchmark
+- [BIRD](https://bird-bench.github.io/) — cross-domain realistic SQL benchmark
+- [Qwen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct) — base policy
+
+Repository code: [Apache-2.0](LICENSE). Data and pretrained-model usage follow their respective licenses.
