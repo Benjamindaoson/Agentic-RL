@@ -12,7 +12,7 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
     required_training = [
         "grpo_run_manifest.json", "training_config.json", "training.log",
         "training_metrics.jsonl", "policy_checkpoint_manifest.json",
-        "gpu_telemetry.jsonl", "leakage_audit.json",
+        "gpu_telemetry.jsonl", "resource_metrics.json", "leakage_audit.json",
         "base_model_identity.json",
     ]
     required_comparison = [
@@ -39,6 +39,7 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
         json.loads(line) for line in (training_dir / "training_metrics.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    resource = json.loads((training_dir / "resource_metrics.json").read_text(encoding="utf-8"))
     gpu = [
         json.loads(line) for line in (training_dir / "gpu_telemetry.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
@@ -49,6 +50,8 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
         "measured_optimization_steps": any(row.get("global_step", -1) >= 1 for row in metrics),
         "checkpoint_weights_present": checkpoint.get("weight_file_count", 0) > 0,
         "gpu_telemetry_present": any(row.get("gpus") for row in gpu),
+        "measured_resource_summary": resource.get("telemetry_sample_count", 0) > 0
+            and resource.get("gpu_memory_peak_mib", 0) > 0,
         "leakage_audit_passed": audit.get("passed") is True,
         "base_and_grpo_evaluated": all(name in comparison.get("runs", {}) for name in ("base", "grpo")),
         "paired_statistics_present": "grpo" in comparison.get("paired_vs_base", {}),

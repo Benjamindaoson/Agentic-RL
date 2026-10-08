@@ -24,19 +24,20 @@ Confirm that Train/Val Schema sets are disjoint. The trainer rejects overlap by 
 
 ~~~bash
 export RUN_NAME=ctx4096_turn1_seed42
+export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
 export TRAIN_FILE="$PWD/data/spider/train_ctx4096_turn1.parquet"
 export VAL_FILE="$PWD/data/spider/val_ctx4096_turn1.parquet"
 export CONTEXT_LENGTH=4096 MAX_TURNS=1
 export ROLLOUT_MAX_TOKENS=1024
-bash scripts/run_local_training.sh --seed 42 --epochs 1 --save-freq 1 \
-  --base-model-revision YOUR_RESOLVED_BASE_REVISION
+bash scripts/run_local_training.sh --seed 42 --epochs 1 --save-freq 1
 ~~~
 
 Run status is **not** verified merely because the trainer returns. Inspect:
 
 - `grpo_run_manifest.json` / `training_config.json`: exact model, config, seed, reward and dataset hashes.
 - `training.log` / `training_metrics.jsonl`: real optimizer steps, loss, KL and GRPO metrics.
-- `gpu_telemetry.jsonl`: timestamped peak memory/utilization.
+- `gpu_telemetry.jsonl` and `resource_metrics.json`: real peak memory, utilization and time span.
+- `base_model_identity.json`: resolved immutable base weight files and SHA-256.
 - `policy_checkpoint_manifest.json`: full checkpoint weights SHA-256.
 - `leakage_audit.json`: Gold mutation invariance.
 
@@ -62,6 +63,11 @@ python scripts/compare_experiments.py \
   --reward-ablation runs/eval_validity_only/validity_trajectories.jsonl \
   --leakage-audit runs/ctx4096_turn1_seed42/leakage_audit.json \
   --output-dir runs/comparison
+python scripts/check_weight_change.py \
+  --base-hf-dir /path/to/pinned-base-hf \
+  --grpo-hf-dir runs/ctx4096_turn1_seed42/hf-policy \
+  --no-update-hf-dir /path/to/no-update-exported-hf \
+  --output runs/comparison/weight_change_audit.json
 python scripts/verify_evidence.py \
   --training-dir runs/ctx4096_turn1_seed42 \
   --comparison-dir runs/comparison \
@@ -78,6 +84,7 @@ An incomplete evidence gate intentionally produces exit code 1. Fix the missing 
 
 - Deterministic leakage audit passes.
 - At least one verified real GRPO optimizer update and a saved weight checkpoint.
+- Hash actual pinned base weights and prove GRPO tensor values changed but No-update tensor values did not.
 - Exported updated policy successfully reloads under vLLM.
 - Frozen held-out task set, same public observations and compute budget.
 - Paired Base / GRPO / No-update / validity-only results, with confidence interval.

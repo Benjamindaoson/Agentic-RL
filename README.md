@@ -141,6 +141,7 @@ pip install -e '.[train]'
 python scripts/preflight.py --require-gpus 1
 
 export MODEL=Qwen/Qwen2.5-Coder-3B-Instruct
+export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
 export TRAIN_FILE="$PWD/data/spider/train_ctx4096_turn1.parquet"
 export VAL_FILE="$PWD/data/spider/val_ctx4096_turn1.parquet"
 export RUN_NAME=grpo_ctx4096_turn1_seed42
@@ -149,7 +150,7 @@ export MAX_TURNS=1
 export ROLLOUT_MAX_TOKENS=1024
 export GPU_MEMORY_UTILIZATION=0.65
 bash scripts/run_local_training.sh \
-  --seed 42 --epochs 1 --save-freq 1 --base-model-revision YOUR_IMMUTABLE_REVISION
+  --seed 42 --epochs 1 --save-freq 1
 ~~~
 
 训练脚本自动：
@@ -203,6 +204,7 @@ python scripts/run_rollouts.py \
   --dataset data/spider/val_ctx4096_turn1.parquet \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint base-pinned-revision \
+  --policy-manifest runs/grpo_ctx4096_turn1_seed42/base_model_identity.json \
   --context-limit 4096 --max-turns 1 --seed 42 --temperature 0 \
   --output runs/eval_base/base_trajectories.jsonl
 bash scripts/stop_policy_server.sh
@@ -215,6 +217,7 @@ python scripts/run_rollouts.py \
   --dataset data/spider/val_ctx4096_turn1.parquet \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint trained-export-sha256 \
+  --policy-manifest runs/grpo_ctx4096_turn1_seed42/hf-policy/export_manifest.json \
   --context-limit 4096 --max-turns 1 --seed 42 --temperature 0 \
   --output runs/eval_grpo/grpo_trajectories.jsonl
 bash scripts/stop_policy_server.sh
@@ -246,6 +249,8 @@ runs/
     training.log
     training_metrics.jsonl
     gpu_telemetry.jsonl
+    resource_metrics.json
+    base_model_identity.json
     checkpoints/
     policy_checkpoint_manifest.json
     leakage_audit.json
@@ -267,11 +272,24 @@ runs/
     comparison.json
     evaluation_protocol.json
     leakage_audit.json
+    weight_change_audit.json
     evidence_verification.json
     REPORT.md
 ~~~
 
 训练权重、数据集与原始轨迹体积较大，默认被 `.gitignore` 排除。请保存在受控对象存储或模型仓库，并确保 URI、Hash、权限与留存策略明确。
+
+首先对 Base、GRPO 和 No-update 的真实 HF Tensor 计算数值差异：
+
+~~~bash
+python scripts/check_weight_change.py \
+  --base-hf-dir /path/to/pinned-base-hf \
+  --grpo-hf-dir runs/grpo_ctx4096_turn1_seed42/hf-policy \
+  --no-update-hf-dir /path/to/no-update-exported-hf \
+  --output runs/comparison/weight_change_audit.json
+~~~
+
+输入必须是真实模型权重：不仅检查 GRPO 权重发生非零变化，还检查 No-update 权重应保持不变。
 
 完整验收：
 

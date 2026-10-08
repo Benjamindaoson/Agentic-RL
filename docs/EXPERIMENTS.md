@@ -30,7 +30,7 @@ The 2048↔4096 and 1↔3 contrasts are not fixed-compute Base/GRPO tests. A tra
 
 ## Artifacts and verdicts
 
-See [REPRODUCIBILITY.md](REPRODUCIBILITY.md) for commands. The evidence verifier requires real logged optimizer metrics, checkpoint weight files, GPU telemetry, a pinned model revision, a passing leakage audit and all four compared policy categories.
+See [REPRODUCIBILITY.md](REPRODUCIBILITY.md) for commands. The evidence verifier requires real logged optimizer metrics, checkpoint weight files, GPU telemetry, a hashed pinned base model, demonstrated actual GRPO tensor changes, unchanged no-update tensor values, a passing leakage audit and all four compared policy categories.
 
 **Do not publish the preexisting reference benchmark values (80.4%, 80.2%, etc.) as this repository's experimentally reproduced results.** Only the paired comparator and strict evidence report can support new measured claims.
 

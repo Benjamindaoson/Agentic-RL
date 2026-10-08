@@ -13,8 +13,10 @@
 - [x] Agent Lightning / veRL entrypoint with synchronized token budgets.
 - [x] FSDP and optimizer offload, gradient checkpointing, vLLM GPU setting.
 - [x] Save dataset hashes, validated train/val Schema split and training configuration.
+- [x] Resolve pinned base checkpoint and hash actual weight shards.
 - [x] Collect trainer log, step metrics, GPU telemetry and SHA-256 checkpoint evidence.
 - [x] FSDP actor → HF export command.
+- [x] Compare tensor values among Base, GRPO and No-update exports.
 - [ ] Complete GPU GRPO run and verify optimizer steps/weight change.
 - [ ] Export and reload the trained model under vLLM.
 
@@ -34,6 +36,8 @@
 ## Stage 5 — Generalization and performance
 - [x] BIRD data metadata + DB bind scripts already in repo.
 - [x] Record schema truncation, invalid SQL, P95 latency and GPU telemetry.
+- [x] Aggregate observed GPU memory/power/time; optional price assumptions remain labeled as estimates.
+- [x] Implement strict held-out BIRD evaluation command.
 - [ ] Run BIRD held-out external evaluation.
 - [ ] Verify official BIRD scoring and compare with internal EX.
 - [ ] Produce tokens/sec, peak GPU memory and cost per successful task from real runs.

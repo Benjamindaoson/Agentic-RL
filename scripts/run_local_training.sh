@@ -95,6 +95,7 @@ python -u scripts/train_sql_agent.py \
   --reward-config "$REWARD_CONFIG" \
   --reward-mode "$REWARD_MODE" \
   --gpus "${GPUS:-1}" \
+  --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.65}" \
   --agl-base-url "http://127.0.0.1:$AGL_SERVER_PORT" \
   --agl-key "$AGL_KEY" \
   "$@" 2>&1 | tee "$RUN_DIR/training.log"
@@ -105,5 +106,13 @@ python scripts/extract_training_metrics.py \
 python scripts/checkpoint_manifest.py \
   --checkpoint-dir "$RUN_DIR/checkpoints" \
   --output "$RUN_DIR/policy_checkpoint_manifest.json"
+if [[ -n "$GPU_PID" ]]; then
+  kill "$GPU_PID" 2>/dev/null || true
+  wait "$GPU_PID" 2>/dev/null || true
+  GPU_PID=""
+fi
+python scripts/summarize_resources.py \
+  --input "$RUN_DIR/gpu_telemetry.jsonl" \
+  --output "$RUN_DIR/resource_metrics.json"
 python scripts/audit_leakage.py --output "$RUN_DIR/leakage_audit.json"
 echo "Training, checkpoint and leakage gates returned. Export the policy and run blind evaluation."
