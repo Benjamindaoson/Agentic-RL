@@ -51,3 +51,7 @@ Official BIRD leaderboard EX/R-VES require running the original evaluation scrip
 ## 4. Experimental restrictions
 
 Never train on Spider official Dev or BIRD Mini-Dev. Keep Gold SQL exclusively in post-rollout evaluation. Hash datasets, held-out task IDs and model checkpoints. Log all attempted tasks including runner failures. Do not publish any previously supplied example figures as new results.
+
+## Official BIRD Mini-Dev EX adapter
+
+A separate exporter at `scripts/export_bird_official.py` can align frozen blind trajectories with the upstream BIRD evaluator by original task index and database ID. It refuses official full-set scoring when Gold eligibility has excluded any instance. The current 500-case official Mini-Dev SQLite CPU audit identified 498 Gold-eligible cases and two documented exclusions. Use `scripts/evaluate_bird.py` on that explicit subset for cross-domain tests; it is NOT the same metric or denominator as the unfiltered official leaderboard. After a genuine model rollout and if a future canonical release yields full Gold coverage, the exporter can invoke upstream evaluation_ex.py with strict index, difficulty and source-hash checks.

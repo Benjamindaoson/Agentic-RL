@@ -49,6 +49,15 @@ def verify_immutable_source(
         raise ValueError("not an official BIRD Mini-Dev source manifest")
     if require_gold and metadata.get("validated_gold_sql") is not True:
         raise ValueError("official EX adapter requires prevalidated Gold SQL")
+    if require_gold and (
+        metadata.get("full_mini_dev_coverage") is not True
+        or metadata.get("gold_excluded_count") != 0
+        or metadata.get("eligible_samples") != metadata.get("total_supported_sql")
+    ):
+        raise ValueError(
+            "official full BIRD EX requires all 500 Gold tasks to be executable; "
+            "run the project's clearly labeled Gold-eligible BIRD subset evaluation instead"
+        )
     records_path = Path(metadata["records_path"]).resolve()
     if not records_path.is_file() or sha256(records_path) != metadata["records_sha256"]:
         raise ValueError("BIRD official records missing or have changed since preparation")

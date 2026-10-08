@@ -20,6 +20,8 @@ def make_source(tmp_path, *, alter_question=False):
         "records_sha256": hashlib.sha256(data.read_bytes()).hexdigest(),
         "total_supported_sql": 2, "skipped_non_select": 0,
         "skipped_missing_database": 0, "validated_gold_sql": True,
+        "eligible_samples": 2, "gold_excluded_count": 0,
+        "full_mini_dev_coverage": True,
     }), encoding="utf-8")
     predictions = tmp_path / "predictions.jsonl"
     with predictions.open("w", encoding="utf-8") as sink:
@@ -56,4 +58,15 @@ def test_official_bird_export_rejects_corrupt_source(tmp_path):
     with open(original, "a", encoding="utf-8") as sink:
         sink.write("corruption")
     with pytest.raises(ValueError, match="records missing or have changed"):
+        export_predictions(predictions, manifest, tmp_path / "out", require_full_500=False)
+
+
+def test_official_export_refuses_gold_filtered_minidev_as_full_official(tmp_path):
+    manifest, predictions = make_source(tmp_path)
+    info = json.loads(manifest.read_text(encoding="utf-8"))
+    info["gold_excluded_count"] = 1
+    info["eligible_samples"] = 1
+    info["full_mini_dev_coverage"] = False
+    manifest.write_text(json.dumps(info), encoding="utf-8")
+    with pytest.raises(ValueError, match="all 500 Gold tasks"):
         export_predictions(predictions, manifest, tmp_path / "out", require_full_500=False)
