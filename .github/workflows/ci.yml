@@ -20,7 +20,7 @@ jobs:
           pip install pytest pytest-asyncio sqlglot pandas pyarrow pyyaml httpx openai datasets hydra-core omegaconf
           pip install -e . --no-deps
       - name: Unit and integration tests (CPU)
-        run: pytest -q
+        run: python -m pytest -q
       - name: Audit no gold-label leakage
         run: python scripts/audit_leakage.py --output artifacts/leakage_audit.json
       - name: Dry-run experiment planner
