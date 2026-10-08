@@ -12,10 +12,14 @@ import importlib
 import importlib.metadata
 import importlib.resources
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 from omegaconf import OmegaConf
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 PINNED = {"agentlightning": "1.0.2", "verl": "0.8.0"}
 
