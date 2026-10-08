@@ -1,0 +1,82 @@
+name: BIRD Mini-Dev SQLite Data Preparation (CPU)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/bird-mini-dev.yml'
+      - 'scripts/prepare_bird_minidev.py'
+      - 'scripts/prepare_bird.py'
+      - 'scripts/validate_datasets.py'
+  workflow_dispatch:
+
+jobs:
+  minidev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU libraries
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas pyarrow sqlglot
+          pip install -e . --no-deps
+      - name: Download official BIRD Mini-Dev archive with size cap
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import urllib.request
+          from pathlib import Path
+          url = 'https://bird-bench.oss-cn-beijing.aliyuncs.com/minidev.zip'
+          target = Path('/tmp/bird-minidev.zip')
+          digest = hashlib.sha256()
+          length = 0
+          maximum = 7 * 1024**3
+          with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'Agentic-RL-data-validation/1.0'}), timeout=90) as resp:
+              with target.open('wb') as sink:
+                  while True:
+                      block = resp.read(4 * 1024 * 1024)
+                      if not block:
+                          break
+                      length += len(block)
+                      if length > maximum:
+                          raise RuntimeError('official Mini-Dev archive exceeds 7GiB safety limit')
+                      digest.update(block)
+                      sink.write(block)
+          Path('artifacts').mkdir(exist_ok=True)
+          Path('artifacts/bird_minidev_download.json').write_text(json.dumps({'source_url': url, 'bytes': length, 'sha256': digest.hexdigest()}, indent=2))
+          PY
+      - name: Validate ZIP and extract within storage budget
+        run: |
+          python - <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path
+          sys.path.insert(0, 'scripts')
+          from download_spider import validate_archive
+          path=Path('/tmp/bird-minidev.zip')
+          out=Path('/tmp/bird-minidev')
+          out.mkdir(exist_ok=True)
+          with zipfile.ZipFile(path) as archive:
+              result=validate_archive(archive)
+              archive.extractall(out)
+          print(result)
+          PY
+      - name: Prepare and execute official Mini-Dev Gold SQL
+        run: |
+          python scripts/prepare_bird_minidev.py \
+            --source-dir /tmp/bird-minidev \
+            --output-dir artifacts/bird_minidev \
+            --full-gold-audit --max-rows 100000
+      - name: Upload dataset provenance (no original data files)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bird-minidev-cpu-audit
+          path: |
+            artifacts/bird_minidev_download.json
+            artifacts/bird_minidev/*.json
+          if-no-files-found: warn
