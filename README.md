@@ -148,6 +148,8 @@ cat data/bird_minidev/bird_mini_dev_manifest.json
 
 BIRD 数据文件可能需要遵循官方使用与下载流程。未运行 BIRD 外部评测前，不得声称“跨数据集泛化已验证”。参见 [docs/DATASETS.md](docs/DATASETS.md)。
 
+**完整 500 题 BIRD Mini-Dev 官方 EX 与 498 题内部 Gold-eligible EX 是两种不同协议。** 官方 500 题必须运行 `scripts/run_blind_predictions.py`（不对 Gold 预过滤或预打分），再用 `scripts/export_bird_official.py` 提交到官方 EX 评测器；严格流程见 [docs/BIRD_EVALUATION.md](docs/BIRD_EVALUATION.md)。
+
 ## 6. GPU 最小闭环（先单轮再扩展）
 
 建议先按官方版本兼容说明安装 GPU 依赖，再安装项目训练扩展：
