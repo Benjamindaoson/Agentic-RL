@@ -33,6 +33,7 @@ def default_overrides(args) -> dict[str, Any]:
         "algorithm": {"adv_estimator": "grpo", "use_kl_in_reward": False},
         "data": {
             "train_batch_size": args.train_batch_size,
+            "seed": args.seed,
             "max_prompt_length": args.context_length,
             "max_response_length": args.max_response_length,
             "truncation": "error",
@@ -265,7 +266,23 @@ def main():
         "checkpoint_root": str(run_dir / "checkpoints"),
         "training_config_file": "training_config.json",
     }
-    (run_dir / "grpo_run_manifest.json").write_text(
+    manifest_path = run_dir / "grpo_run_manifest.json"
+    if manifest_path.exists():
+        if args.resume_mode != "auto":
+            raise RuntimeError("run already exists; use a fresh name or --resume-mode auto")
+        previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+        locked = (
+            "base_model", "base_model_revision", "train_sha256", "val_sha256",
+            "context_limit", "max_response_length", "max_turns", "explicit_check",
+            "reward_config_sha256", "reward_mode", "group_size", "seed", "learning_rate",
+        )
+        changes = [key for key in locked if previous.get(key) != manifest.get(key)]
+        if changes:
+            raise RuntimeError(f"resume would mix incompatible experiment settings: {changes}")
+        manifest["resume_from_status"] = previous.get("status")
+    elif args.resume_mode == "auto":
+        raise RuntimeError("resume requested but no previous run manifest exists")
+    manifest_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
     )
     print(json.dumps(dataset_summary, indent=2))
