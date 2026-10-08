@@ -75,8 +75,11 @@ def export_predictions(
     trajectories_file: Path, minidev_manifest: Path, output_dir: Path,
     *, require_full_500: bool = True,
 ) -> dict[str, Any]:
+    # Official scoring must include every original 500-query prediction.
+    # Local Gold validation is a separate subset metric and may time out on
+    # queries the official scorer still needs to receive.
     metadata, source_path, records = verify_immutable_source(
-        minidev_manifest, require_gold=True,
+        minidev_manifest, require_gold=False,
     )
     if require_full_500 and len(records) != 500:
         raise ValueError(f"expected the official 500-row Mini-Dev set; received {len(records)}")
