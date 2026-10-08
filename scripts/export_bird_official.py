@@ -81,8 +81,15 @@ def export_predictions(
         item = json.loads(line)
         if item.get("runner_error"):
             raise ValueError("rollout has a runner error; official export would be incomplete")
-        if item.get("evaluation", {}).get("protocol") != "blind-final-v1":
-            raise ValueError("official export requires posthoc blind-final-v1 evaluation")
+        evaluation = item.get("evaluation", {})
+        protocol = evaluation.get("protocol")
+        if protocol not in ("blind-ungraded-v1", "blind-final-v1"):
+            raise ValueError("official export requires audited blind policy predictions")
+        if require_full_500:
+            if protocol != "blind-ungraded-v1" or evaluation.get("gold_access") != "none":
+                raise ValueError("official full-500 export must use ungraded policy-only inference")
+            if "success" in item or "reward" in item:
+                raise ValueError("official full-500 input cannot be prefiltered by a local Gold scorer")
         task = item.get("task", {})
         if "gold_sql" in task:
             raise ValueError("private Gold SQL leaked into policy trajectory")
@@ -123,6 +130,7 @@ def export_predictions(
         "predictions_sha256": sha256(target),
         "prediction_path": str(target.resolve()),
         "gold_assistance_to_policy": False,
+        "full_official_predictions_are_ungraded": require_full_500,
         "official_ex_scored": False,
         "upstream_scorer": "bird-bench/mini_dev/evaluation/evaluation_ex.py",
     }
