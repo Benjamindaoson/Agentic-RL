@@ -62,7 +62,7 @@ def validate_paired(left: tuple, right: tuple) -> None:
     rm, rp, rr = right
     if set(lr) != set(rr):
         raise ValueError("unpaired task sets")
-    for field in ("dataset_sha256", "task_ids_sha256", "seed", "temperature", "tokenizer", "budget"):
+    for field in ("dataset_sha256", "task_ids_sha256", "seed", "temperature", "tokenizer", "budget", "gold_eligible_coverage"):
         if lp.get(field) != rp.get(field):
             raise ValueError(f"mismatched paired evaluation field {field}")
     if lm.get("runner_error_count") or rm.get("runner_error_count"):
@@ -117,6 +117,7 @@ def build_comparison(runs: dict[str, tuple], *, seed: int = 42, n_boot: int = 20
         "dataset_sha256": baseline[1]["dataset_sha256"],
         "task_ids_sha256": baseline[1]["task_ids_sha256"],
         "budget": baseline[1]["budget"],
+        "gold_eligible_coverage": baseline[1].get("gold_eligible_coverage"),
         "runs": {
             name: {
                 "model": run[0]["model"],

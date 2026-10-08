@@ -91,9 +91,16 @@ def audit(
         checks["bird_prepared_parquet_specified"] = bird_parquet is not None
         if bird_parquet is not None:
             try:
+                bird_audit = json.loads(
+                    Path(bird_parquet).with_suffix(".gold_eligibility.json").read_text(encoding="utf-8")
+                )
+                if (bird_audit.get("eligible_samples", 0) < 1 or
+                        not 0 < bird_audit.get("coverage_ratio", 0) <= 1):
+                    raise ValueError("BIRD Gold subset is not properly audited")
                 report = validate_bird(
-                    bird_parquet, require_all_records=False,
-                    verify_gold=True, timeout=8, max_rows=5000,
+                    bird_parquet, require_all_records=False, verify_gold=True,
+                    timeout=bird_audit["gold_timeout_seconds"],
+                    max_rows=bird_audit["gold_max_rows"],
                 )
                 checks["bird_minidev_gold_executable"] = (
                     report["stats"]["gold_verified"] is True

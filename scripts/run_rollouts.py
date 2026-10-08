@@ -70,6 +70,24 @@ async def main_async(args):
         }
         if not args.limit and len(tasks) != coverage["eligible_test_samples"]:
             raise ValueError("test Parquet sample count does not match eligibility audit")
+    if tasks[0].dataset == "bird-sql":
+        bird_audit_file = data_file.with_suffix(".gold_eligibility.json")
+        if not bird_audit_file.is_file():
+            raise ValueError("BIRD evaluation requires Gold eligibility manifest alongside Parquet")
+        bird_audit = json.loads(bird_audit_file.read_text(encoding="utf-8"))
+        if (bird_audit.get("output") != str(data_file) or
+                bird_audit.get("gold_timeout_seconds") != args.sql_timeout or
+                bird_audit.get("gold_max_rows") != args.max_rows):
+            raise ValueError("BIRD Gold audit input or runtime budget does not match")
+        coverage = {
+            "gold_eligibility_sha256": sha256_file(bird_audit_file),
+            "eligible_test_fraction": bird_audit["coverage_ratio"],
+            "eligible_test_samples": bird_audit["eligible_samples"],
+            "test_excluded_gold": bird_audit["excluded_count"],
+            "official_full_bird_score": False,
+        }
+        if not args.limit and len(tasks) != coverage["eligible_test_samples"]:
+            raise ValueError("BIRD filtered dataset sample count differs from eligibility audit")
     budget = {
         "context_limit": tasks[0].context_limit,
         "max_turns": tasks[0].max_turns,
