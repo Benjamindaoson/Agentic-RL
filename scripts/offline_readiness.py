@@ -35,7 +35,12 @@ def run_check(command: list[str]) -> dict:
     }
 
 
-def audit(*, run_tests: bool = True, require_datasets: bool = False) -> dict:
+def audit(
+    *, run_tests: bool = True, require_datasets: bool = False,
+    eligible_manifest: str | Path | None = None,
+    bird_parquet: str | Path | None = None,
+    require_framework_contract: bool = False,
+) -> dict:
     checks = {
         "required_source_files": all((ROOT / p).is_file() for p in REQUIRED),
         "python_version": sys.version_info >= (3, 12),
@@ -52,16 +57,55 @@ def audit(*, run_tests: bool = True, require_datasets: bool = False) -> dict:
         ]
         checks["offline_commands_passed"] = all(x["passed"] for x in commands)
     if require_datasets:
-        manifest = ROOT / "data/spider/manifest.json"
-        checks["spider_manifest_present"] = manifest.is_file()
-        if manifest.is_file():
-            content = json.loads(manifest.read_text(encoding="utf-8"))
-            variants = content.get("variants", [])
-            checks["spider_files_present"] = bool(variants) and all(
-                Path(path).is_file()
-                for item in variants
-                for path in item.get("files", {}).values()
+        from scripts.validate_datasets import validate_spider, validate_bird
+
+        manifest = Path(eligible_manifest).resolve() if eligible_manifest else (
+            ROOT / "data/spider_eligible/manifest.json"
+        )
+        checks["spider_eligible_manifest_present"] = manifest.is_file()
+        eligibility = manifest.parent / "gold_eligibility_audit.json"
+        checks["spider_gold_eligibility_audit_present"] = eligibility.is_file()
+        if manifest.is_file() and eligibility.is_file():
+            data = json.loads(eligibility.read_text(encoding="utf-8"))
+            checks["spider_exclusions_disclosed"] = (
+                data.get("verified_gold_eligible") is True
+                and sum(data.get("source_samples", {}).values()) > 0
+                and sum(data.get("eligible_samples", {}).values()) > 0
+                and all(
+                    0 < data.get("coverage_ratio", {}).get(k, 0) <= 1
+                    for k in ("train", "val", "test")
+                )
+                and len(data.get("exclusions", [])) == sum(data.get("excluded_by_split", {}).values())
             )
+            if checks["spider_exclusions_disclosed"]:
+                try:
+                    gold_validation = validate_spider(
+                        manifest, verify_gold=True,
+                        timeout=data["timeout_seconds"],
+                        max_rows=data["max_result_rows"],
+                    )
+                    checks["spider_eligible_gold_executable"] = gold_validation["complete"]
+                except (ValueError, FileNotFoundError, KeyError, OSError):
+                    checks["spider_eligible_gold_executable"] = False
+        checks["bird_prepared_parquet_specified"] = bird_parquet is not None
+        if bird_parquet is not None:
+            try:
+                report = validate_bird(
+                    bird_parquet, require_all_records=False,
+                    verify_gold=True, timeout=8, max_rows=5000,
+                )
+                checks["bird_minidev_gold_executable"] = (
+                    report["stats"]["gold_verified"] is True
+                    and report["stats"]["samples"] > 0
+                )
+            except (ValueError, FileNotFoundError, KeyError, OSError):
+                checks["bird_minidev_gold_executable"] = False
+    if require_framework_contract:
+        try:
+            from scripts.verify_framework_contract import contract
+            checks["agentlightning_verl_cpu_contract"] = contract()["passed"]
+        except Exception:
+            checks["agentlightning_verl_cpu_contract"] = False
     return {
         "passed": all(checks.values()),
         "checks": checks,
@@ -75,8 +119,15 @@ def main():
     parser.add_argument("--output", default="artifacts/offline_readiness.json")
     parser.add_argument("--skip-tests", action="store_true")
     parser.add_argument("--require-datasets", action="store_true")
+    parser.add_argument("--eligible-manifest", help="Explicit Gold-eligible Spider manifest")
+    parser.add_argument("--bird-parquet", help="Prepared real BIRD Mini-Dev evaluation Parquet")
+    parser.add_argument("--require-framework-contract", action="store_true")
     args = parser.parse_args()
-    result = audit(run_tests=not args.skip_tests, require_datasets=args.require_datasets)
+    result = audit(
+        run_tests=not args.skip_tests, require_datasets=args.require_datasets,
+        eligible_manifest=args.eligible_manifest, bird_parquet=args.bird_parquet,
+        require_framework_contract=args.require_framework_contract,
+    )
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
