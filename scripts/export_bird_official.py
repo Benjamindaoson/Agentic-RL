@@ -143,6 +143,34 @@ def run_official_ex(
     for path in (evaluator, db_root, gold_file, difficulty_file):
         if not path.exists():
             raise FileNotFoundError(path)
+    # Upstream Mini-Dev package_sqls uses zip() and can silently drop unmatched
+    # predicted/Gold tasks. Reject missing, re-ordered or mislabeled files.
+    predictions = json.loads(Path(export["prediction_path"]).read_text(encoding="utf-8"))
+    gold_lines = [
+        line.strip() for line in gold_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    difficulty = [
+        json.loads(line) for line in difficulty_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    n = int(export["samples"])
+    if (len(predictions), len(gold_lines), len(difficulty)) != (n, n, n):
+        raise ValueError(
+            f"official BIRD task lengths differ: pred={len(predictions)}, "
+            f"gold={len(gold_lines)}, difficulty={len(difficulty)}, expected={n}"
+        )
+    if list(predictions) != [str(i) for i in range(n)]:
+        raise ValueError("official prediction indices are incomplete or not in original order")
+    for i, gold_line in enumerate(gold_lines):
+        parts = gold_line.rsplit("\t", 1)
+        pred_parts = predictions[str(i)].split(DELIMITER)
+        if len(parts) != 2 or len(pred_parts) != 2 or parts[1] != pred_parts[1]:
+            raise ValueError(f"official BIRD Gold/predicted database mismatch at index {i}")
+        if difficulty[i].get("difficulty") not in {"simple", "moderate", "challenging"}:
+            raise ValueError(f"unknown BIRD official difficulty at index {i}")
+    if len({row["difficulty"] for row in difficulty}) < 3:
+        raise ValueError("official difficulty buckets are incomplete")
     output_log = (output_dir / "official_ex_scores.txt").resolve()
     cmd = [
         sys.executable, str(evaluator),
@@ -159,13 +187,36 @@ def run_official_ex(
     )
     if result.returncode:
         raise RuntimeError(f"official BIRD EX scorer failed: {result.stderr[-1600:]}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "official_ex_stdout.log").write_text(result.stdout, encoding="utf-8")
+    (output_dir / "official_ex_stderr.log").write_text(result.stderr, encoding="utf-8")
     if not output_log.is_file() or "EX" not in output_log.read_text(encoding="utf-8"):
         raise RuntimeError("BIRD scorer returned success but produced no valid EX report")
+    score_rows = [
+        line for line in output_log.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("EX")
+    ]
+    scores = None
+    for line in score_rows:
+        fields = line.split()
+        if len(fields) >= 5:
+            try:
+                scores = dict(zip(
+                    ("simple", "moderate", "challenging", "total"),
+                    [float(value) for value in fields[1:5]],
+                ))
+            except ValueError:
+                continue
+    if scores is None or any(value < 0 or value > 100 for value in scores.values()):
+        raise RuntimeError("official scorer result could not be parsed into verified EX percentages")
     report = {
         **export, "official_ex_scored": True,
         "upstream_evaluator": str(evaluator),
         "official_ex_report_path": str(output_log),
         "official_ex_report_sha256": sha256(output_log),
+        "official_ex_accuracy_percent": scores,
+        "official_stdout_sha256": sha256(output_dir / "official_ex_stdout.log"),
+        "official_stderr_sha256": sha256(output_dir / "official_ex_stderr.log"),
         "stdout_tail": result.stdout[-3000:],
     }
     (output_dir / "official_bird_ex_manifest.json").write_text(
