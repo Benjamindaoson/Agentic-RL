@@ -13,22 +13,32 @@ python -m pytest -q
 ## 2. Fixed datasets
 
 ~~~bash
-python scripts/download_spider.py --output-dir data/raw/spider
-python scripts/prepare_spider.py --spider-root data/raw/spider --output-dir data/spider
+bash scripts/prepare_all_datasets.sh
+python scripts/verify_framework_contract.py --output artifacts/framework_contract.json
+# Review excluded Gold SQL tasks, their reasons and final-test coverage
+cat data/spider_eligible/gold_eligibility_audit.json
 python scripts/run_experiment_matrix.py --stage main
 ~~~
 
-Confirm all three database partitions are disjoint: `train_*` and `val_*` come from official Spider Train (group split by DB), while `test_*` is reserved official Spider Dev for final blind evaluation. The trainer rejects Train/Val overlap. Base vs GRPO must use `test_ctx4096_turn1.parquet`, not `val_*`.
+Confirm all three database partitions are disjoint: `train_*` and `val_*` come from official Spider Train (group split by DB), while `test_*` is reserved official Spider Dev for final blind evaluation. The trainer rejects Train/Val overlap. Base vs GRPO must use `data/spider_eligible/test_ctx4096_turn1.parquet`, not `val_*`.
+
+## Real-dataset acceptance (CPU)
+
+The pipeline downloads official Spider 1.0 and the pinned canonical ZIP mirror with a verifiable SHA-256, classifies non-executable Gold SQL and Gold result truncation, and emits a **Gold-eligible subset**. This exclusion is always documented, including its final-test denominator and exact excluded IDs.
+
+Independent BIRD Mini-Dev SQLite can be prepared and Gold audited using `scripts/prepare_bird_minidev.py`. The CPU dataset workflows save source hashes, subset coverage and rejected cases, not unverifiable performance figures.
+
+CI tests the real AGL 1.0.2 / veRL 0.8.0 YAML configuration and actual OpenAI-compatible HTTP request format with mocked server responses; it does not update model parameters.
 
 ## 3. GPU training
 
 ~~~bash
 export RUN_NAME=ctx4096_turn1_seed42
 export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
-export TRAIN_FILE="$PWD/data/spider/train_ctx4096_turn1.parquet"
-export VAL_FILE="$PWD/data/spider/val_ctx4096_turn1.parquet"
+export TRAIN_FILE="$PWD/data/spider_eligible/train_ctx4096_turn1.parquet"
+export VAL_FILE="$PWD/data/spider_eligible/val_ctx4096_turn1.parquet"
 export CONTEXT_LENGTH=4096 MAX_TURNS=1
-export ROLLOUT_MAX_TOKENS=1024
+export ROLLOUT_MAX_TOKENS=1024 SQL_MAX_ROWS=100000
 bash scripts/run_local_training.sh --seed 42 --epochs 1 --save-freq 1
 ~~~
 
