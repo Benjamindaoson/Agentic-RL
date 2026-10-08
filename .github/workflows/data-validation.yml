@@ -1,0 +1,84 @@
+name: Real Dataset Validation (CPU)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/data-validation.yml'
+      - 'scripts/download_spider.py'
+      - 'scripts/download_bird.py'
+      - 'scripts/validate_datasets.py'
+      - 'scripts/validate_bird_metadata.py'
+      - 'scripts/prepare_spider.py'
+      - 'scripts/prepare_bird.py'
+  workflow_dispatch:
+
+jobs:
+  spider:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU dataset dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install gdown pandas pyarrow pyyaml sqlglot
+          pip install -e . --no-deps
+      - name: Download official Spider 1.0
+        run: python scripts/download_spider.py --output-dir data/raw/spider
+      - name: Prepare three-way schema-disjoint data
+        run: python scripts/prepare_spider.py --spider-root data/raw/spider --output-dir data/spider
+      - name: Audit complete dataset structure
+        run: |
+          python scripts/validate_datasets.py \
+            --spider-manifest data/spider/manifest.json \
+            --skip-gold-execution \
+            --output artifacts/spider_structural_audit.json
+      - name: Audit real Gold SQL with SQLite
+        run: |
+          python scripts/validate_datasets.py \
+            --spider-manifest data/spider/manifest.json \
+            --sql-timeout 8 --max-rows 5000 \
+            --output artifacts/spider_gold_execution_audit.json
+      - name: Upload reproducibility artifacts (no raw databases)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spider-cpu-dataset-audits
+          path: |
+            data/raw/spider/download_manifest.json
+            data/spider/manifest.json
+            artifacts/spider_structural_audit.json
+            artifacts/spider_gold_execution_audit.json
+          if-no-files-found: warn
+
+  bird-filtered-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install BIRD metadata downloader
+        run: |
+          python -m pip install --upgrade pip
+          pip install datasets huggingface_hub
+      - name: Download immutable public BIRD filtered-train metadata
+        run: python scripts/download_bird.py --output-dir data/raw/bird --no-clone-mini-dev
+      - name: Validate actual BIRD metadata
+        run: |
+          python scripts/validate_bird_metadata.py \
+            --input data/raw/bird/bird23_train_filtered.jsonl \
+            --expected-rows 6601 --output artifacts/bird_metadata_audit.json
+      - name: Upload BIRD metadata provenance (without dataset contents)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bird-public-metadata-audit
+          path: |
+            data/raw/bird/download_manifest.json
+            artifacts/bird_metadata_audit.json
+          if-no-files-found: warn
