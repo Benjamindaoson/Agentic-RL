@@ -41,9 +41,11 @@ def test_training_context_aggregation_matches_budget():
         rollout_timeout = 300
         async_mode = False
         async_train_batch_size = 64
+        seed = 42
     cfg = default_overrides(Args())
     assert cfg["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] == 4096
     assert cfg["data"]["max_prompt_length"] == 4096
+    assert cfg["data"]["seed"] == 42
     assert cfg["actor_rollout_ref"]["rollout"]["n"] == 4
 
 

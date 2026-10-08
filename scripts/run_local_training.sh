@@ -19,8 +19,17 @@ export POLICY_PROMPT_TOKEN_LIMIT="$CONTEXT_LENGTH"
 export ROLLOUT_MAX_TOKENS="${ROLLOUT_MAX_TOKENS:-1024}"
 export ROLLOUT_TEMPERATURE="${ROLLOUT_TEMPERATURE:-0.7}"
 
-if [[ -f "$RUN_DIR/grpo_run_manifest.json" && "${RESUME:-0}" != "1" ]]; then
-  echo "Existing run manifest: $RUN_DIR. Set RESUME=1 or choose new RUN_NAME." >&2
+RESUME_ARGS=()
+TEE_ARGS=()
+if [[ "${RESUME:-0}" == "1" ]]; then
+  if [[ ! -f "$RUN_DIR/grpo_run_manifest.json" ]]; then
+    echo "RESUME=1 requires an existing experiment manifest" >&2
+    exit 2
+  fi
+  RESUME_ARGS+=(--resume-mode auto)
+  TEE_ARGS+=(-a)
+elif [[ -f "$RUN_DIR/grpo_run_manifest.json" ]]; then
+  echo "Run manifest already exists: $RUN_DIR. Select another RUN_NAME or RESUME=1." >&2
   exit 2
 fi
 mkdir -p "$RUN_DIR"
@@ -98,7 +107,7 @@ python -u scripts/train_sql_agent.py \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.65}" \
   --agl-base-url "http://127.0.0.1:$AGL_SERVER_PORT" \
   --agl-key "$AGL_KEY" \
-  "$@" 2>&1 | tee "$RUN_DIR/training.log"
+  "${RESUME_ARGS[@]}" "$@" 2>&1 | tee "${TEE_ARGS[@]}" "$RUN_DIR/training.log"
 
 python scripts/extract_training_metrics.py \
   --input "$RUN_DIR/training.log" \
