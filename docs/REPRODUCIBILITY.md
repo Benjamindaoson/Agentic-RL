@@ -18,7 +18,7 @@ python scripts/prepare_spider.py --spider-root data/raw/spider --output-dir data
 python scripts/run_experiment_matrix.py --stage main
 ~~~
 
-Confirm that Train/Val Schema sets are disjoint. The trainer rejects overlap by default.
+Confirm all three database partitions are disjoint: `train_*` and `val_*` come from official Spider Train (group split by DB), while `test_*` is reserved official Spider Dev for final blind evaluation. The trainer rejects Train/Val overlap. Base vs GRPO must use `test_ctx4096_turn1.parquet`, not `val_*`.
 
 ## 3. GPU training
 

@@ -109,7 +109,7 @@ python scripts/prepare_spider.py \
   --spider-root data/raw/spider --output-dir data/spider
 ~~~
 
-数据准备生成以下条件的 Train/Val Parquet（数据库 Schema 不重叠）：
+数据准备为每个条件生成三份数据库级隔离的 Parquet：`train_*`（Spider Train 中用于策略更新）、`val_*`（从 Spider Train 按数据库划分出的内部验证集）、`test_*`（**Spider 官方 Dev**，只用于最终盲评测）。不得把训练过程的验证准确率当作最终测试成绩。
 
 | 条件 | Context | Turns | Verifier |
 |---|---:|---:|---|
@@ -192,7 +192,7 @@ python scripts/export_policy.py \
   --target-dir runs/grpo_ctx4096_turn1_seed42/hf-policy
 ~~~
 
-然后分别启动**完全相同**配置的 Base 与 GRPO Policy Server，评价**同一份未用于训练的任务集**：
+然后分别启动**完全相同**配置的 Base 与 GRPO Policy Server，在保留的 **Spider 官方 Dev `test_*`** 上评价，内部 `val_*` 只用于训练期模型选择：
 
 ~~~bash
 # Base policy
@@ -201,7 +201,7 @@ export PROMPT_TOKEN_BUDGET=4096 MAX_RESPONSE_LENGTH=1024
 bash scripts/start_policy_server.sh
 
 python scripts/run_rollouts.py \
-  --dataset data/spider/val_ctx4096_turn1.parquet \
+  --dataset data/spider/test_ctx4096_turn1.parquet \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint base-pinned-revision \
   --policy-manifest runs/grpo_ctx4096_turn1_seed42/base_model_identity.json \
@@ -214,7 +214,7 @@ export POLICY_MODEL="$PWD/runs/grpo_ctx4096_turn1_seed42/hf-policy"
 bash scripts/start_policy_server.sh
 
 python scripts/run_rollouts.py \
-  --dataset data/spider/val_ctx4096_turn1.parquet \
+  --dataset data/spider/test_ctx4096_turn1.parquet \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint trained-export-sha256 \
   --policy-manifest runs/grpo_ctx4096_turn1_seed42/hf-policy/export_manifest.json \
@@ -309,6 +309,7 @@ python scripts/build_report.py \
 
 ## 9. 关键实验局限
 
+- **三路隔离。** `train_*`/`val_*` 均来自官方 Train，严格按照数据库划分；最终 `test_*` 来自 Spider 官方 Dev，不能用于挑选超参数或 Checkpoint。
 - **执行等价不等于在所有数据库上语义等价。** 两条 SQL 可能因测试数据偶然一致；重复样本、复杂 NULL/ORDER BY 与重排可能需要补充额外判定。
 - **训练奖励使用 Gold 是允许的；部署期纠错不允许。** 本项目把 Oracle 放在轨迹结束之后。
 - **No-update 不能代替所有因果实验。** 还需要多 Seed、固定样本预算、无效 Reward 对照，并报告统计不确定性。

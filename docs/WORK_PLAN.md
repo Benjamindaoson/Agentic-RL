@@ -13,6 +13,7 @@
 - [x] Agent Lightning / veRL entrypoint with synchronized token budgets.
 - [x] FSDP and optimizer offload, gradient checkpointing, vLLM GPU setting.
 - [x] Save dataset hashes, validated train/val Schema split and training configuration.
+- [x] Split Spider official Train into disjoint Train and Internal-Val databases, reserving official Dev as final Test.
 - [x] Resolve pinned base checkpoint and hash actual weight shards.
 - [x] Collect trainer log, step metrics, GPU telemetry and SHA-256 checkpoint evidence.
 - [x] FSDP actor → HF export command.

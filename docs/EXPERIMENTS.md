@@ -6,7 +6,7 @@
 
 1. Test P0 leakage invariance and CPU integration.
 2. GPU smoke GRPO (single-turn). Store optimizer metrics, model checkpoint and hashes.
-3. Freeze held-out sample IDs and inference protocol.
+3. Freeze held-out sample IDs and inference protocol: split official Spider Train into Train and Internal-Val by database; reserve official Dev exclusively as `test_*` for final comparison.
 4. Evaluate the Base policy.
 5. Export updated HF actor, evaluate it on the same tasks and budget.
 6. Evaluate No-update LR=0 (identical training pathway but zero optimizer learning rate).
