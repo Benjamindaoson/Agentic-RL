@@ -1,3 +1,4 @@
+# All weights are loaded by the runtime evaluator (not documentation-only).
 reward:
   execution_match: 0.90
   valid_sql: 0.03
@@ -6,10 +7,8 @@ reward:
   invalid_penalty: -0.20
   timeout_penalty: -0.15
   retry_cost_per_extra_turn: -0.02
+  mode: execution
 
-invariants:
-  - Only an execution-equivalent result may receive reward above 0.5.
-  - Write/DDL SQL is blocked before execution.
-  - Databases are opened read-only with SQLite query_only enabled.
-  - Truncated results never count as an execution match.
-  - Gold SQL must execute successfully or the task is rejected.
+# REWARD_MODE=validity_only is a deliberately weaker reward ablation:
+# it removes the success signal, retaining only syntactic/execution shaping.
+# This is NOT the primary GRPO reward.

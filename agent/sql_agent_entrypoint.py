@@ -10,11 +10,12 @@ import httpx
 from agentic_rl_sql.agent import OpenAICompatibleClient, SqlAgentRunner
 from agentic_rl_sql.context import hf_message_counter
 from agentic_rl_sql.evaluator import SqlEvaluator
+from agentic_rl_sql.reward import load_reward_config
 from agentic_rl_sql.types import SqlTask
 
 
 class Agent:
-    """Agent Lightning entrypoint; policy receives only a blind PolicyTask."""
+    """Agent Lightning entrypoint; policy receives only blind PolicyTask."""
 
     async def run(self) -> None:
         task_payload = json.loads(os.environ["TASK_JSON"])
@@ -38,9 +39,15 @@ class Agent:
                 os.environ.get("POLICY_TOKENIZER_PATH", "Qwen/Qwen2.5-Coder-3B-Instruct")
             ),
         )
+        # Policy cannot observe the label, reward or oracle-based termination.
         trajectory = await runner.run(task.policy_view())
+        cfg = load_reward_config(
+            os.environ.get("REWARD_CONFIG", "configs/reward.yaml"),
+            os.environ.get("REWARD_MODE") or None,
+        )
         graded = SqlEvaluator(
             timeout_seconds=runner.timeout_seconds, max_rows=runner.max_rows,
+            reward_config=cfg,
         ).evaluate(task, trajectory)
         event = {
             "event_type": "reward",
@@ -54,6 +61,7 @@ class Agent:
                     "stop_reason": trajectory.stop_reason,
                     "reward": graded["reward"], "steps": graded["steps"],
                     "evaluation_protocol": "blind-final-v1",
+                    "reward_config": cfg.to_dict(),
                 },
             },
         }
