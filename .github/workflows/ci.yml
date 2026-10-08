@@ -13,15 +13,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install test dependencies
+      - name: Install CPU test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install pytest pytest-asyncio sqlglot pandas pyarrow pyyaml httpx openai
+          pip install pytest pytest-asyncio sqlglot pandas pyarrow pyyaml httpx openai datasets hydra-core omegaconf
           pip install -e . --no-deps
-      - name: Unit tests
-        run: pytest
+      - name: Unit and integration tests (CPU)
+        run: pytest -q
+      - name: Audit no gold-label leakage
+        run: python scripts/audit_leakage.py --output artifacts/leakage_audit.json
+      - name: Dry-run experiment planner
+        run: python scripts/run_experiment_matrix.py --stage smoke --output-dir /tmp/agentic-rl-ci
       - name: Compile Python
         run: python -m compileall -q src agent scripts
       - name: Validate shell scripts
         run: bash -n scripts/*.sh
+      - name: Upload blind-protocol audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: leakage-audit
+          path: artifacts/leakage_audit.json
+          if-no-files-found: error
