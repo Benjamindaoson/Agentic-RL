@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Strict evidence gate. Missing training/rollout evidence is failure, never a fake pass."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+
+def verify(training_dir: Path, comparison_dir: Path) -> dict:
+    problems = []
+    required_training = [
+        "grpo_run_manifest.json", "training_config.json", "training.log",
+        "training_metrics.jsonl", "policy_checkpoint_manifest.json",
+        "gpu_telemetry.jsonl", "leakage_audit.json",
+    ]
+    required_comparison = [
+        "comparison.json", "comparison.csv", "comparison.md",
+        "evaluation_protocol.json", "leakage_audit.json",
+    ]
+    for name in required_training:
+        if not (training_dir / name).is_file() or (training_dir / name).stat().st_size == 0:
+            problems.append(f"training artifact missing/empty: {name}")
+    for name in required_comparison:
+        if not (comparison_dir / name).is_file() or (comparison_dir / name).stat().st_size == 0:
+            problems.append(f"comparison artifact missing/empty: {name}")
+    if problems:
+        return {"passed": False, "checks": [], "problems": problems}
+    train = json.loads((training_dir / "grpo_run_manifest.json").read_text(encoding="utf-8"))
+    checkpoint = json.loads((training_dir / "policy_checkpoint_manifest.json").read_text(encoding="utf-8"))
+    comparison = json.loads((comparison_dir / "comparison.json").read_text(encoding="utf-8"))
+    audit = json.loads((comparison_dir / "leakage_audit.json").read_text(encoding="utf-8"))
+    metrics = [
+        json.loads(line) for line in (training_dir / "training_metrics.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    gpu = [
+        json.loads(line) for line in (training_dir / "gpu_telemetry.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    checks = {
+        "trainer_returned": train.get("status") == "trainer_returned_verify_metrics_and_checkpoints",
+        "correct_protocol": train.get("eval_protocol") == comparison.get("protocol") == "blind-final-v1",
+        "measured_optimization_steps": any(row.get("global_step", -1) >= 1 for row in metrics),
+        "checkpoint_weights_present": checkpoint.get("weight_file_count", 0) > 0,
+        "gpu_telemetry_present": any(row.get("gpus") for row in gpu),
+        "leakage_audit_passed": audit.get("passed") is True,
+        "base_and_grpo_evaluated": all(name in comparison.get("runs", {}) for name in ("base", "grpo")),
+        "paired_statistics_present": "grpo" in comparison.get("paired_vs_base", {}),
+        "model_revision_pinned": train.get("base_model_revision") not in (None, "", "UNPINNED"),
+        "no_update_control": "no_update" in comparison.get("runs", {}),
+        "reward_ablation_control": "reward_ablation" in comparison.get("runs", {}),
+    }
+    for name, ok in checks.items():
+        if not ok:
+            problems.append(f"failed evidence check: {name}")
+    return {"passed": not problems, "checks": checks, "problems": problems}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--training-dir", required=True)
+    ap.add_argument("--comparison-dir", required=True)
+    ap.add_argument("--output", required=True)
+    args = ap.parse_args()
+    result = verify(Path(args.training_dir), Path(args.comparison_dir))
+    target = Path(args.output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2))
+    if not result["passed"]:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
