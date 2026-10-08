@@ -1,33 +1,37 @@
-# 实验设计
+# Experiments and causal evidence
 
-## 主对照
+**Primary target**: Qwen2.5-Coder-3B-Instruct; held-out Spider databases.
 
-- Base policy：未经 GRPO 更新的 Qwen2.5-Coder-3B-Instruct；
-- GRPO policy：在真实 SQLite 环境中使用可验证奖励进行 On-Policy 更新。
+## Required ordering
 
-## 消融矩阵
+1. Test P0 leakage invariance and CPU integration.
+2. GPU smoke GRPO (single-turn). Store optimizer metrics, model checkpoint and hashes.
+3. Freeze held-out sample IDs and inference protocol.
+4. Evaluate the Base policy.
+5. Export updated HF actor, evaluate it on the same tasks and budget.
+6. Evaluate No-update LR=0 (identical training pathway but zero optimizer learning rate).
+7. Evaluate validity-only reward ablation (success signal removed).
+8. Repeat seeds and expand context/multi-turn matrix.
+9. Run BIRD external held-out dataset.
 
-| 实验 | 上下文 | 最大轮次 | 显式检查 |
-|---|---:|---:|:---:|
-| ctx2048_turn1 | 2048 | 1 | 否 |
-| ctx2048_turn3 | 2048 | 3 | 否 |
-| ctx2048_turn3_check | 2048 | 3 | 是 |
-| ctx4096_turn1 | 4096 | 1 | 否 |
-| ctx4096_turn3 | 4096 | 3 | 否 |
+## Main comparisons
 
-## 指标
+| Experiment | Max prompt tokens | Max turns | Explicit checker | Causal question |
+|---|---:|---:|---|---|
+| ctx2048_turn1 | 2048 | 1 | No | Short-context Base/GRPO gain |
+| ctx2048_turn3 | 2048 | 3 | No | Additional autonomous interaction |
+| ctx2048_turn3_check | 2048 | 3 | Yes | Self-checker benefit/cost |
+| ctx4096_turn1 | 4096 | 1 | No | Longer context at fixed turns |
+| ctx4096_turn3 | 4096 | 3 | No | Longer context and multi-turn |
+| no_update_ctx4096_turn1 | 4096 | 1 | No | Does the training pathway alone explain gain? |
+| validity_only_ctx4096_turn1 | 4096 | 1 | No | Is the execution-match reward important? |
 
-- 最终任务准确率；
-- 首轮准确率；
-- 平均奖励；
-- 平均修正轮次；
-- 无效 SQL 率；
-- 危险 SQL 率；
-- 平均/P95 延迟。
+The 2048↔4096 and 1↔3 contrasts are not fixed-compute Base/GRPO tests. A training condition's Base and GRPO evaluations must use exactly its same context and turn budget.
 
-## 企业决策价值
+## Artifacts and verdicts
 
-- 上下文消融回答“增加 Prompt 长度是否比增加重试更划算”；
-- 轮次消融回答“多次工具调用是否值得额外延迟”；
-- 显式检查消融回答“额外 verifier 调用能否覆盖训练和推理成本”；
-- 小模型强化学习结果回答“是否可以用更低推理成本替代更大通用模型”。
+See [REPRODUCIBILITY.md](REPRODUCIBILITY.md) for commands. The evidence verifier requires real logged optimizer metrics, checkpoint weight files, GPU telemetry, a pinned model revision, a passing leakage audit and all four compared policy categories.
+
+**Do not publish the preexisting reference benchmark values (80.4%, 80.2%, etc.) as this repository's experimentally reproduced results.** Only the paired comparator and strict evidence report can support new measured claims.
+
+Reward-hacking threats: coincidental SQL result match, SQL that just returns all rows, query truncation, insufficient enforcement of structured feedback, and optimizer changing format compliance instead of semantic reasoning. Report error types and qualitative corrections in addition to accuracy.

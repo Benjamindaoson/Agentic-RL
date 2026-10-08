@@ -1,46 +1,39 @@
-# 架构设计
+# Architecture: offline oracle, online blind policy
 
-```text
-Open-source SQL tasks
-  ├─ Spider 1.0
-  └─ BIRD-SQL filtered train / Mini-Dev
-          ↓
-Prepared Parquet
-  input.task_json / db_path / max_turns / dataset
-          ↓
-Agent Lightning Controller
-          ↓
-Real SQL Agent Harness
-  question + schema + evidence
-  → generate SQL
-  → read-only SQLite execution
-  → verifier feedback
-  → optional rewrite / explicit check
-          ↓
-RLVR Reward
-  execution-equivalent result = task success
-  + small validity shaping
-  - unsafe / invalid / timeout / retry cost
-          ↓
-veRL GRPO
-  grouped rollouts
-  → relative advantages
-  → clipped policy update
-  → reference KL control
-          ↓
-Held-out evaluation
-  task accuracy / first-turn accuracy / invalid SQL / turns / latency
-```
+~~~text
+Private SqlTask(dataset):
+  question / schema / gold_sql / budgets
+       | policy_view()        \ posthoc grading only
+       v                       v
+Public PolicyTask           SqlEvaluator
+       |                       ^
+       v                       |
+Blind SqlAgentRunner --> Frozen Trajectory
+       |                       |
+       +-----------------------+
+       |
+  model selects SQL + final/inspect
+       |
+read-only SQLite execution
+       |
+observed rows / errors; gold NEVER consulted
+       |
+next model call only on inspect / observed failure / truncation
+~~~
 
-## 运行与训练分离
+The model cannot read the label or determine whether its execution matched the expected result. Only the posthoc grader may calculate match/reward after the blind rollout has terminated.
 
-运行侧只负责与真实数据库交互、采集轨迹和返回奖励。训练侧负责并行 Rollout、组内优势估计与模型参数更新。数据库环境不参与梯度计算，模型训练框架也不承担 SQL 执行逻辑。
+Modules:
+- `src/agentic_rl_sql/types.py` — private/public task boundary and raw trajectory types.
+- `src/agentic_rl_sql/agent.py` — policy-facing state machine.
+- `src/agentic_rl_sql/context.py` — tokenizer-based prompt budget with explicit Schema-only truncation.
+- `src/agentic_rl_sql/execution.py` — SQLite execution and normalized result comparison.
+- `src/agentic_rl_sql/evaluator.py` — Gold-only posthoc scoring.
+- `src/agentic_rl_sql/reward.py` — YAML-driven RLVR reward / controlled ablation.
+- `agent/sql_agent_entrypoint.py` — Agent Lightning reward event after trajectory completion.
+- `scripts/train_sql_agent.py` — veRL config and training manifests.
+- `scripts/run_rollouts.py` — blinded evaluation, immutable protocol, JSONL evidence.
+- `scripts/compare_experiments.py` — paired statistical testing.
+- `scripts/verify_evidence.py` — strict no-snapshot evidence gate.
 
-## 算法证明对象
-
-本项目不以 Agent 编排复杂度为贡献点，重点验证：
-
-1. 可验证环境奖励是否能提升任务成功率；
-2. GRPO 在线更新是否优于静态模型；
-3. 上下文长度、交互轮次和显式检查如何影响收益与训练成本；
-4. 奖励设计如何避免“能执行但答案错误”的 Reward Hacking。
+Security note: the private task is loaded by the Agent Lightning wrapper for scoring. All model requests are constructed inside the blind runner from the allowlisted PolicyTask, not the private object. The architecture is therefore a software-enforced policy/grade boundary, not a hardware sandbox.
