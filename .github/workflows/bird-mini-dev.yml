@@ -9,6 +9,10 @@ on:
       - 'scripts/validate_datasets.py'
   workflow_dispatch:
 
+concurrency:
+  group: workflow-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   minidev:
     runs-on: ubuntu-latest
