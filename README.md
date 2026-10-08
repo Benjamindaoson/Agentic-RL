@@ -139,7 +139,7 @@ cat data/raw/bird/metadata_audit.json
 python scripts/prepare_bird_minidev.py \
   --source-dir /path/to/extracted/minidev \
   --output-dir data/bird_minidev \
-  --full-gold-audit --gold-timeout 30 --max-rows 100000
+  --full-gold-audit --gold-timeout 30 --max-rows 5000
 cat data/bird_minidev/bird_mini_dev_manifest.json
 ~~~
 
@@ -157,7 +157,7 @@ export MODEL=Qwen/Qwen2.5-Coder-3B-Instruct
 export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
 export TRAIN_FILE="$PWD/data/spider_eligible/train_ctx4096_turn1.parquet"
 export VAL_FILE="$PWD/data/spider_eligible/val_ctx4096_turn1.parquet"
-export SQL_MAX_ROWS=100000
+export SQL_MAX_ROWS=5000
 export RUN_NAME=grpo_ctx4096_turn1_seed42
 export CONTEXT_LENGTH=4096
 export MAX_TURNS=1
@@ -219,7 +219,7 @@ python scripts/run_rollouts.py \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint base-pinned-revision \
   --policy-manifest runs/grpo_ctx4096_turn1_seed42/base_model_identity.json \
-  --context-limit 4096 --max-turns 1 --max-rows 100000 --seed 42 --temperature 0 \
+  --context-limit 4096 --max-turns 1 --max-rows 5000 --seed 42 --temperature 0 \
   --output runs/eval_base/base_trajectories.jsonl
 bash scripts/stop_policy_server.sh
 
@@ -232,7 +232,7 @@ python scripts/run_rollouts.py \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint trained-export-sha256 \
   --policy-manifest runs/grpo_ctx4096_turn1_seed42/hf-policy/export_manifest.json \
-  --context-limit 4096 --max-turns 1 --max-rows 100000 --seed 42 --temperature 0 \
+  --context-limit 4096 --max-turns 1 --max-rows 5000 --seed 42 --temperature 0 \
   --output runs/eval_grpo/grpo_trajectories.jsonl
 bash scripts/stop_policy_server.sh
 ~~~

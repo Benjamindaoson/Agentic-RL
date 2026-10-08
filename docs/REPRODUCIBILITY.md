@@ -38,7 +38,7 @@ export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
 export TRAIN_FILE="$PWD/data/spider_eligible/train_ctx4096_turn1.parquet"
 export VAL_FILE="$PWD/data/spider_eligible/val_ctx4096_turn1.parquet"
 export CONTEXT_LENGTH=4096 MAX_TURNS=1
-export ROLLOUT_MAX_TOKENS=1024 SQL_MAX_ROWS=100000
+export ROLLOUT_MAX_TOKENS=1024 SQL_MAX_ROWS=5000
 bash scripts/run_local_training.sh --seed 42 --epochs 1 --save-freq 1
 ~~~
 

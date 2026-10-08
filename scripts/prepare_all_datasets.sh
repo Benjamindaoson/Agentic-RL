@@ -6,7 +6,7 @@ cd "$ROOT"
 DATA_ROOT="${DATA_ROOT:-$ROOT/data}"
 SPIDER_RAW="${SPIDER_RAW:-$DATA_ROOT/raw/spider}"
 SPIDER_ELIGIBLE="${SPIDER_ELIGIBLE:-$DATA_ROOT/spider_eligible}"
-SQL_MAX_ROWS="${SQL_MAX_ROWS:-100000}"
+SQL_MAX_ROWS="${SQL_MAX_ROWS:-5000}"
 
 python scripts/download_spider.py --output-dir "$SPIDER_RAW"
 python scripts/prepare_spider.py \
