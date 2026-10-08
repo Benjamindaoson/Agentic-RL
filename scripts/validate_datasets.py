@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +109,10 @@ def validate_spider(
                 raise ValueError(f"{name}/{split}: samples do not match manifest")
             if stats["database_count"] != variant["database_counts"][split]:
                 raise ValueError(f"{name}/{split}: database count does not match manifest")
+            expected_db_hash = variant["database_ids_sha256"][split]
+            actual_db_hash = hashlib.sha256(json.dumps(stats["database_ids"]).encode("utf-8")).hexdigest()
+            if expected_db_hash != actual_db_hash:
+                raise ValueError(f"{name}/{split}: database IDs differ from manifest")
             actual[split], ids[split] = stats, signatures
             for raw in read_training_parquet(path):
                 task = unpack_task(raw)
@@ -128,7 +131,8 @@ def validate_spider(
         result["variants"].append({"name": name, "splits": actual, "schema_disjoint": True})
     result["unique_gold_queries_executed"] = len(gold_cache)
     result["verified_gold_queries"] = verify_gold
-    result["complete"] = True
+    result["structurally_validated"] = True
+    result["complete"] = verify_gold
     return result
 
 
@@ -144,6 +148,8 @@ def validate_bird(
         raise ValueError(f"BIRD manifest skipped {skipped} records; full coverage was requested")
     # The BIRD manifest already records the subset's split through the Parquet tasks.
     rows = read_training_parquet(path)
+    if not rows:
+        raise ValueError("BIRD prepared parquet is empty")
     splits = {unpack_task(row).split for row in rows}
     if len(splits) != 1:
         raise ValueError(f"mixed BIRD splits in {path}")

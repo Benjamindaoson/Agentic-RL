@@ -37,7 +37,7 @@ def test_real_spider_three_way_preparation_and_full_gold_execution(tmp_path, mon
     prepare_spider_main()
     report = validate_spider(output / "manifest.json", verify_gold=True)
     assert report["complete"] and report["verified_gold_queries"]
-    assert len(report["variants"]) == 5
+    assert len(report["variants"]) == 6  # both context budgets include an optional self-check variant
     assert report["unique_gold_queries_executed"] == 3
     for variant in report["variants"]:
         assert all(part["gold_verified"] for part in variant["splits"].values())
