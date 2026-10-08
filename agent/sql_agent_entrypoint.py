@@ -34,7 +34,7 @@ class Agent:
         runner = SqlAgentRunner(
             client, max_schema_chars=int(os.environ.get("MAX_SCHEMA_CHARS", "12000")),
             timeout_seconds=float(os.environ.get("SQL_TIMEOUT_SECONDS", "8")),
-            max_rows=int(os.environ.get("SQL_MAX_ROWS", "5000")),
+            max_rows=int(os.environ.get("SQL_MAX_ROWS", "100000")),
             token_counter=hf_message_counter(
                 os.environ.get("POLICY_TOKENIZER_PATH", "Qwen/Qwen2.5-Coder-3B-Instruct")
             ),
