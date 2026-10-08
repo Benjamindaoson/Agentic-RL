@@ -20,10 +20,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
+from agentic_rl_sql.sql_guard import validate_read_only_sql
 from scripts.prepare_bird import iter_json_rows
 
 DELIMITER = "\t----- bird -----\t"
+# Upstream scorer catches SQL execution errors as incorrect predictions.
+# A nonexistent read-only table deliberately scores 0, unlike SQL that may
+# mutate canonical database contents if passed through from a model.
+SAFE_INVALID_SQL = "SELECT * FROM __agentic_rl_invalid_prediction__"
 
 
 def sha256(path: Path) -> str:
@@ -113,6 +119,7 @@ def export_predictions(
     if len(rows) != len(records):
         raise ValueError(f"expected {len(records)} blind policy predictions, got {len(rows)}")
     prediction = {}
+    invalid_output_ids = []
     for i, original in enumerate(records):
         task_id = f"bird-eval-{i:05d}"
         item = rows.pop(task_id, None)
@@ -124,8 +131,13 @@ def export_predictions(
         if item["task"]["question"] != str(original["question"]):
             raise ValueError(f"question mismatch at {task_id}")
         sql = str(item.get("final_sql") or "").strip()
-        if not sql:
-            raise ValueError(f"missing final SQL: {task_id}")
+        guard = validate_read_only_sql(sql)
+        if not sql or not guard.valid or not guard.safe:
+            # Keep the full original 500-instance denominator. The official
+            # evaluator will mark the deliberately failing read-only SQL as 0.
+            # Never execute model-supplied DDL/DML in an official DB process.
+            sql = SAFE_INVALID_SQL
+            invalid_output_ids.append(task_id)
         prediction[str(i)] = clean_query(sql) + DELIMITER + db
     if rows:
         raise ValueError(f"unrecognized prediction task IDs: {sorted(rows)[:3]}")
@@ -144,6 +156,8 @@ def export_predictions(
         "rollouts_sha256": sha256(trajectories_file),
         "predictions_sha256": sha256(target),
         "prediction_path": str(target.resolve()),
+        "invalid_or_unsafe_model_outputs": len(invalid_output_ids),
+        "invalid_output_task_ids": invalid_output_ids,
         "gold_assistance_to_policy": False,
         "full_official_predictions_are_ungraded": require_full_500,
         "official_ex_scored": False,

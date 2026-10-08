@@ -72,3 +72,18 @@ def test_internal_bird_subset_export_keeps_incomplete_gold_coverage_visible(tmp_
     assert report["official_ex_scored"] is False
     assert report["official_full_500_rows"] is False
     assert report["local_gold_excluded_count"] == 1
+
+
+def test_export_maps_unsafe_model_sql_to_readonly_incorrect_case(tmp_path):
+    manifest, predictions = make_source(tmp_path)
+    rows = [json.loads(line) for line in predictions.read_text(encoding="utf-8").splitlines()]
+    rows[0]["final_sql"] = "DROP TABLE songs"
+    rows[1]["final_sql"] = None
+    predictions.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    from scripts.export_bird_official import SAFE_INVALID_SQL
+    report = export_predictions(predictions, manifest, tmp_path / "out", require_full_500=False)
+    saved = json.loads((tmp_path / "out" / "predicted_bird_minidev_sqlite.json").read_text(encoding="utf-8"))
+    assert saved["0"].startswith(SAFE_INVALID_SQL)
+    assert saved["1"].startswith(SAFE_INVALID_SQL)
+    assert report["invalid_or_unsafe_model_outputs"] == 2
+    assert report["official_ex_scored"] is False
