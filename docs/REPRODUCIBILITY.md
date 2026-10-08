@@ -104,3 +104,21 @@ An incomplete evidence gate intentionally produces exit code 1. Fix the missing 
 - Report actual GPU time, max memory and inference token usage; do not estimate these as measurements.
 
 **Status:** Until the actual GPU run exists, all training claims remain unverified irrespective of green CPU CI.
+
+
+## Strict pre-GPU completion gate
+
+The lightweight CI check only validates code. For **actual** CPU data readiness, prepare and audit Gold-eligible Spider records and the real SQLite BIRD Mini-Dev first, then run:
+
+~~~bash
+python scripts/offline_readiness.py \
+  --require-datasets \
+  --eligible-manifest data/spider_eligible/manifest.json \
+  --bird-parquet data/bird_mini_dev/bird_mini_dev_select.parquet \
+  --require-framework-contract \
+  --output artifacts/offline_readiness_full.json
+~~~
+
+The command deliberately fails if either real dataset is missing, the Gold-eligibility exclusion list is incomplete, a retained Gold SQL fails under its recorded execution budget, or the pinned Agent Lightning / veRL installed configurations do not match. It cannot establish successful CUDA execution, vLLM checkpoint reload, or real optimizer updates; these are separate GPU-dependent evidence gates.
+
+Spider prepared datasets are **Gold-eligible subsets with exact exclusions disclosed**, not automatically official unfiltered leaderboard scores. Train, internal validation and final test must use the *same* filtered split provenance.
