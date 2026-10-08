@@ -122,3 +122,27 @@ python scripts/offline_readiness.py \
 The command deliberately fails if either real dataset is missing, the Gold-eligibility exclusion list is incomplete, a retained Gold SQL fails under its recorded execution budget, or the pinned Agent Lightning / veRL installed configurations do not match. It cannot establish successful CUDA execution, vLLM checkpoint reload, or real optimizer updates; these are separate GPU-dependent evidence gates.
 
 Spider prepared datasets are **Gold-eligible subsets with exact exclusions disclosed**, not automatically official unfiltered leaderboard scores. Train, internal validation and final test must use the *same* filtered split provenance.
+
+
+## Data transfer without renting a GPU for preprocessing
+
+Run the Spider/BIRD download and CPU eligibility audits on a cheap local/CPU
+machine, then transfer the official SQLite files plus the prepared Parquet files
+to the GPU container. Since prepared Parquet stores absolute SQLite paths, do
+not upload it without rewriting these paths against the destination mount:
+
+~~~bash
+python scripts/relocate_spider_data.py \
+  --source-manifest /uploaded/spider_eligible/manifest.json \
+  --db-root /mounted/spider/database \
+  --output-dir /mounted/spider_for_training \
+  --verify-gold --max-rows 100000
+export TRAIN_FILE=/mounted/spider_for_training/train_ctx4096_turn1.parquet
+export VAL_FILE=/mounted/spider_for_training/val_ctx4096_turn1.parquet
+~~~
+
+The relocation script fails if any database is missing/ambiguous, preserves
+the same task ID/Gold/split/corpus semantics, copies exclusion provenance and
+emits an audit with source/destination Parquet SHA-256. Re-run the CPU strict
+gate on the new mount before paying for a GPU session. A successful relocation
+does not count as GRPO optimizer evidence.

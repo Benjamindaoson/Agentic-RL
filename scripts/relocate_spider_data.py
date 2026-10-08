@@ -50,7 +50,7 @@ def database_index(root: Path) -> dict[str, Path]:
 
 def relocate(manifest: Path, db_root: Path, output_dir: Path, *,
              verify_gold: bool = False, timeout: float = 8.0,
-             max_rows: int = 5000) -> dict:
+             max_rows: int = 100000) -> dict:
     manifest = manifest.resolve()
     output_dir = output_dir.resolve()
     if timeout <= 0 or max_rows < 1:
@@ -137,7 +137,7 @@ def main():
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--verify-gold", action="store_true")
     ap.add_argument("--sql-timeout", type=float, default=8.0)
-    ap.add_argument("--max-rows", type=int, default=5000)
+    ap.add_argument("--max-rows", type=int, default=100000)
     args = ap.parse_args()
     report = relocate(Path(args.source_manifest), Path(args.db_root), Path(args.output_dir),
                       verify_gold=args.verify_gold, timeout=args.sql_timeout,
