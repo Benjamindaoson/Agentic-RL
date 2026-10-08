@@ -70,6 +70,7 @@ async def main_async(args):
         "task_count": len(tasks),
         "model": args.model, "tokenizer": args.tokenizer,
         "policy_checkpoint": args.policy_checkpoint,
+        "policy_identity_sha256": sha256_file(Path(args.policy_manifest)) if args.policy_manifest else None,
         "seed": args.seed, "temperature": args.temperature,
         "budget": budget,
     }
@@ -149,6 +150,7 @@ async def main_async(args):
         "dataset_sha256": protocol["dataset_sha256"],
         "task_ids_sha256": protocol["task_ids_sha256"],
         "model": args.model, "policy_checkpoint": args.policy_checkpoint,
+        "policy_identity_sha256": protocol["policy_identity_sha256"],
         "tokenizer": args.tokenizer, "temperature": args.temperature,
         "seed": args.seed, "budget": budget, "trajectories_sha256": sha256_file(output),
     })
@@ -168,6 +170,7 @@ def main():
     ap.add_argument("--model", default="sql-policy")
     ap.add_argument("--tokenizer", default="Qwen/Qwen2.5-Coder-3B-Instruct")
     ap.add_argument("--policy-checkpoint", required=True, help="Immutable checkpoint identifier or base revision")
+    ap.add_argument("--policy-manifest", default="", help="Local base_model_identity.json or exported HF export_manifest.json")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--max-tokens", type=int, default=1024)
@@ -182,6 +185,10 @@ def main():
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
+    if args.policy_manifest:
+        payload = json.loads(Path(args.policy_manifest).read_text(encoding="utf-8"))
+        if not (payload.get("weights_fingerprint_sha256") or payload.get("file_manifest", {}).get("weight_file_count")):
+            ap.error("--policy-manifest does not describe hashed weight files")
     if args.concurrency < 1:
         ap.error("--concurrency must be >= 1")
     if args.resume and args.overwrite:

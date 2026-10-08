@@ -13,10 +13,12 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
         "grpo_run_manifest.json", "training_config.json", "training.log",
         "training_metrics.jsonl", "policy_checkpoint_manifest.json",
         "gpu_telemetry.jsonl", "leakage_audit.json",
+        "base_model_identity.json",
     ]
     required_comparison = [
         "comparison.json", "comparison.csv", "comparison.md",
         "evaluation_protocol.json", "leakage_audit.json",
+        "weight_change_audit.json",
     ]
     for name in required_training:
         if not (training_dir / name).is_file() or (training_dir / name).stat().st_size == 0:
@@ -30,6 +32,9 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
     checkpoint = json.loads((training_dir / "policy_checkpoint_manifest.json").read_text(encoding="utf-8"))
     comparison = json.loads((comparison_dir / "comparison.json").read_text(encoding="utf-8"))
     audit = json.loads((comparison_dir / "leakage_audit.json").read_text(encoding="utf-8"))
+    identity = json.loads((training_dir / "base_model_identity.json").read_text(encoding="utf-8"))
+    weight_change = json.loads((comparison_dir / "weight_change_audit.json").read_text(encoding="utf-8"))
+    eval_protocols = json.loads((comparison_dir / "evaluation_protocol.json").read_text(encoding="utf-8"))
     metrics = [
         json.loads(line) for line in (training_dir / "training_metrics.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
@@ -47,7 +52,14 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
         "leakage_audit_passed": audit.get("passed") is True,
         "base_and_grpo_evaluated": all(name in comparison.get("runs", {}) for name in ("base", "grpo")),
         "paired_statistics_present": "grpo" in comparison.get("paired_vs_base", {}),
-        "model_revision_pinned": train.get("base_model_revision") not in (None, "", "UNPINNED"),
+        "base_weights_identified": identity.get("status") == "resolved_hashed"
+            and identity.get("weight_file_count", 0) > 0,
+        "policy_manifests_attached_to_all_evaluations": all(
+            item.get("policy_identity_sha256") for item in eval_protocols.values()
+        ),
+        "grpo_weights_actually_changed": weight_change.get("checks", {}).get("grpo_policy_parameters_changed") is True,
+        "no_update_weights_unchanged": weight_change.get("checks", {}).get("no_update_policy_parameters_unchanged") is True,
+        "weight_change_audit_passed": weight_change.get("passed") is True,
         "no_update_control": "no_update" in comparison.get("runs", {}),
         "reward_ablation_control": "reward_ablation" in comparison.get("runs", {}),
     }

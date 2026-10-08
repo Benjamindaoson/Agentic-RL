@@ -114,6 +114,7 @@ def build_comparison(runs: dict[str, tuple], *, seed: int = 42, n_boot: int = 20
             name: {
                 "model": run[0]["model"],
                 "policy_checkpoint": run[0]["policy_checkpoint"],
+                "policy_identity_sha256": run[1].get("policy_identity_sha256"),
                 "samples": run[0]["samples"],
                 "task_accuracy": run[0]["task_accuracy"],
                 "first_turn_accuracy": run[0]["first_turn_accuracy"],

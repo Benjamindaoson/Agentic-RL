@@ -24,6 +24,14 @@ if [[ -f "$RUN_DIR/grpo_run_manifest.json" && "${RESUME:-0}" != "1" ]]; then
   exit 2
 fi
 mkdir -p "$RUN_DIR"
+export MODEL_REVISION="${MODEL_REVISION:-}"
+if [[ -d "$MODEL" || -n "$MODEL_REVISION" ]]; then
+  MODEL="$(python scripts/model_identity.py --model "$MODEL" --revision "$MODEL_REVISION" --output "$RUN_DIR/base_model_identity.json")"
+  export MODEL
+  export POLICY_TOKENIZER_PATH="$MODEL"
+else
+  echo "Base model not pinned. To pass publication evidence gate, set MODEL_REVISION to an immutable Hugging Face commit SHA." >&2
+fi
 python scripts/preflight.py --require-gpus "${GPUS:-1}"
 
 SERVER_PID=""
@@ -78,6 +86,7 @@ python -u scripts/train_sql_agent.py \
   --train-file "$TRAIN_FILE" \
   --val-file "$VAL_FILE" \
   --model "$MODEL" \
+  --base-model-revision "$MODEL_REVISION" \
   --run-name "$RUN_NAME" \
   --run-dir "$RUN_DIR" \
   --context-length "$CONTEXT_LENGTH" \
