@@ -40,6 +40,8 @@ def execute_sql(db_path: str | Path, sql: str, timeout_seconds: float = 8.0, max
         return ExecutionResult(sql=sql, valid=False, safe=False, executed=False, error_type="parse_error", error_message=guard.error)
     if not guard.safe or not guard.normalized_sql:
         return ExecutionResult(sql=sql, valid=True, safe=False, executed=False, error_type="unsafe_sql", error_message=guard.error)
+    if timeout_seconds <= 0 or max_rows < 1:
+        raise ValueError("SQL timeout must be positive and max_rows >= 1")
     conn = connect_read_only(db_path)
     deadline = time.monotonic() + timeout_seconds
 

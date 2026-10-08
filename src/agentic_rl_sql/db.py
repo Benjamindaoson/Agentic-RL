@@ -8,7 +8,7 @@ def connect_read_only(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path).resolve()
     if not path.exists():
         raise FileNotFoundError(path)
-    uri = f"file:{path.as_posix()}?mode=ro"
+    uri = f"{path.as_uri()}?mode=ro&immutable=1"
     conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA foreign_keys=ON")

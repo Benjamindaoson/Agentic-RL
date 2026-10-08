@@ -85,6 +85,8 @@ async def main_async(args):
         if old.get("fingerprint") != protocol["fingerprint"]:
             raise RuntimeError("resume config/dataset/model mismatch; refusing mixed trajectories")
     else:
+        if args.resume and not output.exists():
+            raise FileNotFoundError("resume requested but no prior rollout file exists")
         if output.exists() and not args.overwrite:
             raise FileExistsError(f"{output} already exists; choose --overwrite or --resume")
         output.write_text("", encoding="utf-8")
@@ -189,6 +191,8 @@ def main():
         payload = json.loads(Path(args.policy_manifest).read_text(encoding="utf-8"))
         if not (payload.get("weights_fingerprint_sha256") or payload.get("file_manifest", {}).get("weight_file_count")):
             ap.error("--policy-manifest does not describe hashed weight files")
+    if args.limit < 0:
+        ap.error("--limit must not be negative")
     if args.concurrency < 1:
         ap.error("--concurrency must be >= 1")
     if args.resume and args.overwrite:
