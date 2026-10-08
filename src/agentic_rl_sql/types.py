@@ -6,6 +6,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class SqlTask:
+    """Private dataset record. Gold SQL must never be passed to the policy."""
     task_id: str
     dataset: str
     split: str
@@ -19,21 +20,41 @@ class SqlTask:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "SqlTask":
-        known = {
-            "task_id", "dataset", "split", "db_id", "db_path", "question", "gold_sql",
-            "evidence", "max_turns", "context_limit", "metadata",
-        }
-        payload = {k: value[k] for k in known if k in value}
+    def from_dict(cls, value: dict[str, Any]) -> SqlTask:
         required = {"task_id", "dataset", "split", "db_id", "db_path", "question", "gold_sql"}
-        missing = sorted(required - payload.keys())
+        missing = sorted(required - value.keys())
         if missing:
             raise ValueError(f"SqlTask missing fields: {missing}")
-        payload.setdefault("evidence", "")
-        payload.setdefault("max_turns", 3)
-        payload.setdefault("context_limit", 4096)
-        payload.setdefault("metadata", {})
-        return cls(**payload)
+        known = set(cls.__dataclass_fields__)
+        return cls(**{k: value[k] for k in known if k in value})
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def policy_view(self) -> PolicyTask:
+        """Allowlisted observable inputs only: no answer or oracle-derived state."""
+        return PolicyTask(
+            task_id=self.task_id, dataset=self.dataset, split=self.split,
+            db_id=self.db_id, db_path=self.db_path, question=self.question,
+            evidence=self.evidence, max_turns=self.max_turns,
+            context_limit=self.context_limit,
+            metadata={"explicit_check": bool(self.metadata.get("explicit_check", False))},
+        )
+
+
+@dataclass(slots=True)
+class PolicyTask:
+    """Only information available to a deployed policy."""
+    task_id: str
+    dataset: str
+    split: str
+    db_id: str
+    db_path: str
+    question: str
+    evidence: str = ""
+    max_turns: int = 3
+    context_limit: int = 4096
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -81,38 +102,35 @@ class TrajectoryStep:
     raw_model_output: str
     sql: str | None
     execution: ExecutionResult
-    execution_match: bool
     feedback: str
+    decision: str = "final"
     checker_output: str | None = None
+    prompt_tokens: int | None = None
+    schema_truncated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "turn": self.turn,
-            "prompt_kind": self.prompt_kind,
-            "raw_model_output": self.raw_model_output,
-            "sql": self.sql,
-            "execution": self.execution.to_dict(),
-            "execution_match": self.execution_match,
-            "feedback": self.feedback,
-            "checker_output": self.checker_output,
+            "turn": self.turn, "prompt_kind": self.prompt_kind,
+            "raw_model_output": self.raw_model_output, "sql": self.sql,
+            "execution": self.execution.to_dict(), "feedback": self.feedback,
+            "decision": self.decision, "checker_output": self.checker_output,
+            "prompt_tokens": self.prompt_tokens, "schema_truncated": self.schema_truncated,
         }
 
 
 @dataclass(slots=True)
 class Trajectory:
-    task: SqlTask
+    """Blind rollout; no success, reward, correctness or gold fields."""
+    task: PolicyTask
     steps: list[TrajectoryStep]
-    reward: RewardBreakdown
-    success: bool
     final_sql: str | None
     total_elapsed_ms: float
+    stop_reason: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "task": self.task.to_dict(),
-            "steps": [step.to_dict() for step in self.steps],
-            "reward": self.reward.to_dict(),
-            "success": self.success,
-            "final_sql": self.final_sql,
-            "total_elapsed_ms": self.total_elapsed_ms,
+            "steps": [s.to_dict() for s in self.steps],
+            "final_sql": self.final_sql, "total_elapsed_ms": self.total_elapsed_ms,
+            "stop_reason": self.stop_reason,
         }
