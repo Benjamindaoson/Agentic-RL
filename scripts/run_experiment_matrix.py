@@ -47,7 +47,7 @@ def plan(config: dict, data_dir: Path, output_dir: Path, stage: str) -> list[dic
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/experiment_matrix.yaml")
-    ap.add_argument("--data-dir", default="data/spider")
+    ap.add_argument("--data-dir", default="data/spider_eligible")
     ap.add_argument("--output-dir", default="runs/matrix")
     ap.add_argument("--stage", default="smoke",
                     choices=["smoke", "main", "ablations", "controls", "all"])

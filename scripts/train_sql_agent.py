@@ -228,6 +228,7 @@ def parse_args():
     ap.add_argument("--wandb", action=argparse.BooleanOptionalAction, default=False)
     ap.add_argument("--reward-config", default="configs/reward.yaml")
     ap.add_argument("--reward-mode", choices=["execution", "validity_only"], default="execution")
+    ap.add_argument("--sql-max-rows", type=int, default=100000)
     ap.add_argument("--allow-schema-overlap", action="store_true", help="toy/testing ONLY; forbidden for Spider")
     ap.add_argument("--seed", type=int, default=42)
     return ap.parse_known_args()
@@ -239,12 +240,35 @@ def main():
         raise ValueError("invalid GRPO group/gpu/learning-rate")
     if args.allow_schema_overlap and "spider" in args.train_file.lower():
         raise ValueError("Spider must remain cross-schema")
+    if args.sql_max_rows < 1:
+        raise ValueError("SQL_MAX_ROWS must be positive")
     train_path, val_path = Path(args.train_file).resolve(), Path(args.val_file).resolve()
     rows = {
         "train": cast(Sequence[Any], HuggingFaceDataset.from_parquet(str(train_path)).to_list()),
         "val": cast(Sequence[Any], HuggingFaceDataset.from_parquet(str(val_path)).to_list()),
     }
     dataset_summary = validate_training_dataset(rows["train"], rows["val"], args)
+    if "spider" in args.train_file.lower():
+        eligible = train_path.parent / "gold_eligibility_audit.json"
+        prepared = train_path.parent / "manifest.json"
+        if train_path.parent != val_path.parent or not eligible.is_file() or not prepared.is_file():
+            raise ValueError("Spider training requires Gold-eligible train/val files and a validated manifest")
+        eligibility = json.loads(eligible.read_text(encoding="utf-8"))
+        manifest_data = json.loads(prepared.read_text(encoding="utf-8"))
+        if not eligibility.get("verified_gold_eligible") or not manifest_data.get("gold_eligible_subset"):
+            raise ValueError("Gold-eligible Spider data audit failed")
+        if (eligibility.get("max_result_rows") != args.sql_max_rows or
+                manifest_data.get("gold_filter_max_rows") != args.sql_max_rows):
+            raise ValueError("training SQL row cap differs from preverified Spider Gold limit")
+        if not any(
+            Path(item["files"]["train"]).resolve() == train_path and
+            Path(item["files"]["val"]).resolve() == val_path
+            for item in manifest_data.get("variants", [])
+        ):
+            raise ValueError("train/val files are not a matched prepared Spider variant")
+        dataset_summary["gold_eligibility_audit_sha256"] = sha256_file(eligible)
+        dataset_summary["gold_eligible_subset"] = True
+        dataset_summary["official_test_coverage"] = eligibility["coverage_ratio"]["test"]
     reward_cfg = load_reward_config(args.reward_config, args.reward_mode)
     config = build_config(args, dotlist)
     run_dir = Path(args.run_dir).resolve()
@@ -255,6 +279,7 @@ def main():
     os.environ["POLICY_PROMPT_TOKEN_LIMIT"] = str(args.context_length)
     os.environ["POLICY_TOKENIZER_PATH"] = args.model
     os.environ["ROLLOUT_MAX_TOKENS"] = str(args.max_response_length)
+    os.environ["SQL_MAX_ROWS"] = str(args.sql_max_rows)
     os.environ["ROLLOUT_TEMPERATURE"] = os.environ.get("ROLLOUT_TEMPERATURE", "0.7")
     os.environ["PYTHONHASHSEED"] = str(args.seed)
     try:
@@ -275,6 +300,7 @@ def main():
         "base_model_revision": args.base_model_revision or "LOCAL_WEIGHT_HASH" if (run_dir / "base_model_identity.json").exists() else "UNPINNED",
         "base_model_identity_file": "base_model_identity.json" if (run_dir / "base_model_identity.json").exists() else None,
         "seed": args.seed, "learning_rate": args.learning_rate,
+        "sql_max_rows": args.sql_max_rows,
         "reward_mode": reward_cfg.mode, "reward_config": reward_cfg.to_dict(),
         "reward_config_sha256": sha256_file(Path(args.reward_config)),
         "train_file": str(train_path), "train_sha256": sha256_file(train_path),
@@ -296,6 +322,7 @@ def main():
             "base_model", "base_model_revision", "train_sha256", "val_sha256",
             "context_limit", "max_response_length", "max_turns", "explicit_check",
             "reward_config_sha256", "reward_mode", "group_size", "seed", "learning_rate",
+            "sql_max_rows",
         )
         changes = [key for key in locked if previous.get(key) != manifest.get(key)]
         if changes:

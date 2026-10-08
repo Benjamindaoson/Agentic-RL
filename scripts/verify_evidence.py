@@ -47,6 +47,8 @@ def verify(training_dir: Path, comparison_dir: Path) -> dict:
     checks = {
         "trainer_returned": train.get("status") == "trainer_returned_verify_metrics_and_checkpoints",
         "correct_protocol": train.get("eval_protocol") == comparison.get("protocol") == "blind-final-v1",
+        "sql_result_cap_is_identical": train.get("sql_max_rows") ==
+            comparison.get("budget", {}).get("sql_max_rows"),
         "measured_optimization_steps": any(row.get("global_step", -1) >= 1 for row in metrics),
         "checkpoint_weights_present": checkpoint.get("weight_file_count", 0) > 0,
         "gpu_telemetry_present": any(row.get("gpus") for row in gpu),
