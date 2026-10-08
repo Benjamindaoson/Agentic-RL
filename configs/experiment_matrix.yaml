@@ -1,41 +1,66 @@
-project: 大模型在线强化学习与策略优化
+project: Agentic-RL
 model: Qwen/Qwen2.5-Coder-3B-Instruct
+dataset: spider-1.0
 algorithm: GRPO
-reward: RLVR execution equivalence
-primary_dataset: Spider 1.0
-external_dataset: BIRD-SQL
-
-matrix:
-  - name: ctx2048_turn1
-    context_length: 2048
-    max_turns: 1
-    explicit_check: false
-  - name: ctx2048_turn3
-    context_length: 2048
-    max_turns: 3
-    explicit_check: false
-  - name: ctx2048_turn3_check
-    context_length: 2048
-    max_turns: 3
-    explicit_check: true
-  - name: ctx4096_turn1
-    context_length: 4096
-    max_turns: 1
-    explicit_check: false
-  - name: ctx4096_turn3
-    context_length: 4096
-    max_turns: 3
-    explicit_check: false
-
-training:
-  group_size: 4
-  train_batch_size: 32
-  ppo_mini_batch_size: 32
-  ppo_micro_batch_size_per_gpu: 4
-  learning_rate: 1.0e-6
-  clip_ratio_low: 0.2
-  clip_ratio_high: 0.3
-  kl_coefficient: 0.001
-  epochs: 2
-  rollout_engine: vLLM
-  trainer: Agent-Lightning + veRL
+protocol: blind-final-v1
+stages:
+  smoke:
+    - name: smoke_ctx2048_turn1
+      context_length: 2048
+      max_turns: 1
+      explicit_check: false
+      reward_mode: execution
+      learning_rate: 1.0e-6
+      epochs: 1
+  main:
+    - name: ctx4096_turn1
+      context_length: 4096
+      max_turns: 1
+      explicit_check: false
+      reward_mode: execution
+      learning_rate: 1.0e-6
+      epochs: 2
+  ablations:
+    - name: ctx2048_turn1
+      context_length: 2048
+      max_turns: 1
+      explicit_check: false
+      reward_mode: execution
+      learning_rate: 1.0e-6
+      epochs: 2
+    - name: ctx2048_turn3
+      context_length: 2048
+      max_turns: 3
+      explicit_check: false
+      reward_mode: execution
+      learning_rate: 1.0e-6
+      epochs: 2
+    - name: ctx2048_turn3_check
+      context_length: 2048
+      max_turns: 3
+      explicit_check: true
+      reward_mode: execution
+      learning_rate: 1.0e-6
+      epochs: 2
+    - name: ctx4096_turn3
+      context_length: 4096
+      max_turns: 3
+      explicit_check: false
+      reward_mode: execution
+      learning_rate: 1.0e-6
+      epochs: 2
+  controls:
+    - name: no_update_ctx4096_turn1
+      context_length: 4096
+      max_turns: 1
+      explicit_check: false
+      reward_mode: execution
+      learning_rate: 0.0
+      epochs: 2
+    - name: validity_only_ctx4096_turn1
+      context_length: 4096
+      max_turns: 1
+      explicit_check: false
+      reward_mode: validity_only
+      learning_rate: 1.0e-6
+      epochs: 2
