@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentic-rl-sql"
-version = "1.0.0"
+version = "1.1.0"
 description = "GRPO and RLVR for self-correcting Text-to-SQL agents in executable environments"
 readme = "README.md"
 requires-python = ">=3.12"
