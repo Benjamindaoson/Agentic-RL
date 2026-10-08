@@ -135,7 +135,10 @@ def export_predictions(
     report = {
         "source_dataset": "bird-bench Mini-Dev SQLite",
         "scope": "500 SELECT-only Mini-Dev (not BIRD full Dev)",
-        "official_full_500_rows": len(records) == 500,
+        "official_full_500_rows": len(records) == 500 and require_full_500,
+        "local_gold_eligible_samples": metadata.get("eligible_samples"),
+        "local_gold_excluded_count": metadata.get("gold_excluded_count"),
+        "local_full_gold_coverage": metadata.get("full_mini_dev_coverage"),
         "samples": len(records),
         "records_sha256": sha256(source_path),
         "rollouts_sha256": sha256(trajectories_file),
@@ -159,6 +162,12 @@ def run_official_ex(
 ) -> dict[str, Any]:
     if timeout <= 0 or cpus < 1:
         raise ValueError("invalid official scorer execution budget")
+    if (
+        export.get("samples") != 500
+        or export.get("official_full_500_rows") is not True
+        or export.get("full_official_predictions_are_ungraded") is not True
+    ):
+        raise ValueError("official EX may run only on all 500 ungraded raw Mini-Dev predictions")
     evaluator = official_code.resolve() / "evaluation" / "evaluation_ex.py"
     for path in (evaluator, db_root, gold_file, difficulty_file):
         if not path.exists():

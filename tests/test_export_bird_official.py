@@ -61,12 +61,14 @@ def test_official_bird_export_rejects_corrupt_source(tmp_path):
         export_predictions(predictions, manifest, tmp_path / "out", require_full_500=False)
 
 
-def test_official_export_refuses_gold_filtered_minidev_as_full_official(tmp_path):
+def test_internal_bird_subset_export_keeps_incomplete_gold_coverage_visible(tmp_path):
     manifest, predictions = make_source(tmp_path)
     info = json.loads(manifest.read_text(encoding="utf-8"))
     info["gold_excluded_count"] = 1
     info["eligible_samples"] = 1
     info["full_mini_dev_coverage"] = False
     manifest.write_text(json.dumps(info), encoding="utf-8")
-    with pytest.raises(ValueError, match="all 500 Gold tasks"):
-        export_predictions(predictions, manifest, tmp_path / "out", require_full_500=False)
+    report = export_predictions(predictions, manifest, tmp_path / "out", require_full_500=False)
+    assert report["official_ex_scored"] is False
+    assert report["official_full_500_rows"] is False
+    assert report["local_gold_excluded_count"] == 1

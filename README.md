@@ -144,7 +144,7 @@ cat data/bird_minidev/bird_mini_dev_manifest.json
 ~~~
 
 
-**BIRD Mini-Dev CPU 数据实测：** 当前官方 500 条 SELECT 数据中，有 498 条通过本项目的 SQLite Gold 校验，2 条已作为 Gold 不可评分案例记录。可以在 498 条 Gold-eligible 子集上进行 Base/GRPO 泛化对照，但这**不能直接称作官方完整 500 条 Mini-Dev EX 排行榜结果**。新脚本 `scripts/export_bird_official.py` 会在覆盖不满 500 条时拒绝冒充完整官方分数。
+**BIRD Mini-Dev CPU 数据实测：** 当前官方 500 条 SELECT 数据中，有 498 条通过本项目的 SQLite Gold 校验，2 条已作为 Gold 不可评分案例记录。可以在 498 条 Gold-eligible 子集上进行 Base/GRPO 泛化对照，但这**不能直接称作官方完整 500 条 Mini-Dev EX 排行榜结果**。`scripts/export_bird_official.py` 区分两条路径：内部 498 条 Gold-eligible 子集只能报告明确标注的内部指标；若获得真实模型对原始 **全部 500 条**的无 Gold 盲推理结果，则可交给官方 BIRD EX 评测器独立计分，并由官方代码决定无效 Gold 的处理。官方成绩必须以真实官方评分输出为准。
 
 BIRD 数据文件可能需要遵循官方使用与下载流程。未运行 BIRD 外部评测前，不得声称“跨数据集泛化已验证”。参见 [docs/DATASETS.md](docs/DATASETS.md)。
 
