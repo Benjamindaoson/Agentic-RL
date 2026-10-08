@@ -100,6 +100,8 @@ async def main_async(args):
                 if key in done:
                     raise ValueError(f"duplicate resume task: {key}")
                 done.add(key)
+        if not done.issubset(set(ids)):
+            raise ValueError("resume contains task IDs not in current evaluation dataset")
     pending = [task for task in tasks if task.task_id not in done]
     token_counter = hf_message_counter(args.tokenizer)
     client = OpenAICompatibleClient(
@@ -191,6 +193,8 @@ def main():
         payload = json.loads(Path(args.policy_manifest).read_text(encoding="utf-8"))
         if not (payload.get("weights_fingerprint_sha256") or payload.get("file_manifest", {}).get("weight_file_count")):
             ap.error("--policy-manifest does not describe hashed weight files")
+    if args.policy_checkpoint.strip() == "":
+        ap.error("checkpoint identifier must not be blank")
     if args.limit < 0:
         ap.error("--limit must not be negative")
     if args.concurrency < 1:

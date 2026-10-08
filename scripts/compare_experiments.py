@@ -29,6 +29,8 @@ def load_run(path: Path) -> tuple[dict, dict, dict[str, dict]]:
         raise ValueError(f"raw trajectories modified after metrics were produced: {path}")
     if metrics.get("protocol_fingerprint") != protocol.get("fingerprint"):
         raise ValueError(f"protocol/metrics mismatch for {path}")
+    if protocol.get("task_count") != metrics.get("samples"):
+        raise ValueError(f"task count does not match protocol for {path}")
     if protocol.get("protocol") != "blind-final-v1" or protocol.get("oracle_access") != "post_rollout_only":
         raise ValueError(f"not a blind protocol: {path}")
     rows = {}
@@ -47,6 +49,11 @@ def load_run(path: Path) -> tuple[dict, dict, dict[str, dict]]:
         rows[task_id] = data
     if len(rows) != metrics.get("samples") or not rows:
         raise ValueError(f"sample count mismatch: {path}")
+    expected_id_hash = hashlib.sha256(
+        json.dumps(sorted(rows), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    if expected_id_hash != protocol.get("task_ids_sha256"):
+        raise ValueError(f"task IDs differ from signed protocol: {path}")
     return metrics, protocol, rows
 
 

@@ -134,7 +134,9 @@ class SqlAgentRunner:
         feedback = ""
         stop_reason = "max_turns"
         final_sql: str | None = None
-        for turn in range(1, max(task.max_turns, 1) + 1):
+        if task.max_turns < 1:
+            raise ValueError("max_turns must be >= 1")
+        for turn in range(1, task.max_turns + 1):
             make_prompt = lambda s: build_messages(task, s, turn, previous_sql, previous_execution, feedback)
             messages, prompt_tokens, truncated = fit_schema_to_budget(
                 make_prompt, schema, task.context_limit, self.token_counter,
