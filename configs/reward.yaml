@@ -1,0 +1,15 @@
+reward:
+  execution_match: 0.90
+  valid_sql: 0.03
+  executable_sql: 0.07
+  unsafe_penalty: -1.00
+  invalid_penalty: -0.20
+  timeout_penalty: -0.15
+  retry_cost_per_extra_turn: -0.02
+
+invariants:
+  - Only an execution-equivalent result may receive reward above 0.5.
+  - Write/DDL SQL is blocked before execution.
+  - Databases are opened read-only with SQLite query_only enabled.
+  - Truncated results never count as an execution match.
+  - Gold SQL must execute successfully or the task is rejected.

@@ -1,0 +1,21 @@
+{
+  "model": "Qwen2.5-Coder-3B-Instruct",
+  "algorithm": "GRPO",
+  "dataset": "Spider 1.0",
+  "experiments": [
+    {"context_length": 2048, "max_turns": 1, "explicit_check": false, "initial_accuracy": 0.638, "final_accuracy": 0.732},
+    {"context_length": 2048, "max_turns": 3, "explicit_check": false, "initial_accuracy": 0.634, "final_accuracy": 0.764},
+    {"context_length": 2048, "max_turns": 3, "explicit_check": true, "initial_accuracy": 0.636, "final_accuracy": 0.776, "training_time_note": "approximately doubled versus no explicit checker"},
+    {"context_length": 4096, "max_turns": 1, "explicit_check": false, "initial_accuracy": 0.688, "final_accuracy": 0.802},
+    {"context_length": 4096, "max_turns": 3, "explicit_check": false, "initial_accuracy": 0.696, "final_accuracy": 0.804}
+  ],
+  "headline": {
+    "single_turn_gain_pp": 11.4,
+    "three_turn_gain_pp": 10.8,
+    "context_single_turn_gain_pp": 7.0,
+    "context_three_turn_gain_pp": 4.0,
+    "extra_turns_gain_at_4096_pp": 0.2,
+    "explicit_check_gain_pp": 1.2
+  },
+  "provenance": "Reference experiment snapshot supplied with the project brief. Reproduce with the included training and evaluation pipeline before publishing new claims."
+}

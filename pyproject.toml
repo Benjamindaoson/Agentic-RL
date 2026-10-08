@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-rl-sql"
+version = "1.0.0"
+description = "GRPO and RLVR for self-correcting Text-to-SQL agents in executable environments"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [{name = "Jianming Lai"}]
+dependencies = [
+  "agentlightning>=1.0.2,<2",
+  "datasets>=4.0.0",
+  "httpx>=0.28.0",
+  "openai>=2.0.0,<3",
+  "pandas>=2.3.0",
+  "pyarrow>=20.0.0",
+  "pyyaml>=6.0",
+  "sqlglot>=27.0.0",
+  "torch>=2.8.0",
+  "transformers>=4.56.0",
+  "hydra-core==1.3.2",
+  "omegaconf==2.3.0",
+  "gdown>=5.2.0",
+]
+
+[project.optional-dependencies]
+train = [
+  "verl>=0.7.1,<0.9.0",
+  "ray[default]>=2.48.0",
+  "vllm>=0.10.2",
+  "flash-attn>=2.8.0",
+  "wandb>=0.21.0",
+]
+dev = [
+  "pytest>=8.4.0",
+  "pytest-asyncio>=1.1.0",
+  "ruff>=0.12.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
