@@ -23,7 +23,9 @@ def test_upstream_official_bird_adapter_rejects_length_mismatch(tmp_path):
     }), encoding="utf-8")
     with pytest.raises(ValueError, match="task lengths differ"):
         run_official_ex(
-            {"prediction_path": str(predicted), "samples": 2},
+            {"prediction_path": str(predicted), "samples": 500,
+             "official_full_500_rows": True,
+             "full_official_predictions_are_ungraded": True},
             official_code=repo, db_root=db_root, gold_file=gold,
             difficulty_file=difficulty, timeout=1.0, cpus=1,
             output_dir=tmp_path,
