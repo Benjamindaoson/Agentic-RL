@@ -139,7 +139,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-manifest", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--max-rows", type=int, default=5000)
+    parser.add_argument("--max-rows", type=int, default=100000)
     parser.add_argument("--sql-timeout", type=float, default=8.0)
     args = parser.parse_args()
     result = filter_manifest(

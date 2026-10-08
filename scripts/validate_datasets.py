@@ -178,7 +178,7 @@ def main():
                     help="Structural check only; result cannot be marked gold-verified")
     ap.add_argument("--allow-bird-subset", action="store_true")
     ap.add_argument("--sql-timeout", type=float, default=8.0)
-    ap.add_argument("--max-rows", type=int, default=5000)
+    ap.add_argument("--max-rows", type=int, default=100000)
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
     try:
