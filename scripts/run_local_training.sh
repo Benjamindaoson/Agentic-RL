@@ -6,8 +6,8 @@ export PYTHONPATH="$ROOT/src:$ROOT:${PYTHONPATH:-}"
 export AGL_SERVER_PORT="${AGL_SERVER_PORT:-8181}"
 export AGL_KEY="${AGL_KEY:-agentic-rl-dev-key}"
 export MODEL="${MODEL:-Qwen/Qwen2.5-Coder-3B-Instruct}"
-export TRAIN_FILE="${TRAIN_FILE:-$ROOT/data/spider/train_ctx4096_turn1.parquet}"
-export VAL_FILE="${VAL_FILE:-$ROOT/data/spider/val_ctx4096_turn1.parquet}"
+export TRAIN_FILE="${TRAIN_FILE:-$ROOT/data/spider_eligible/train_ctx4096_turn1.parquet}"
+export VAL_FILE="${VAL_FILE:-$ROOT/data/spider_eligible/val_ctx4096_turn1.parquet}"
 export RUN_NAME="${RUN_NAME:-qwen25_coder_3b_ctx4096_turn1}"
 export RUN_DIR="${RUN_DIR:-$ROOT/runs/$RUN_NAME}"
 export CONTEXT_LENGTH="${CONTEXT_LENGTH:-4096}"
@@ -17,6 +17,7 @@ export REWARD_MODE="${REWARD_MODE:-execution}"
 export POLICY_TOKENIZER_PATH="${POLICY_TOKENIZER_PATH:-$MODEL}"
 export POLICY_PROMPT_TOKEN_LIMIT="$CONTEXT_LENGTH"
 export ROLLOUT_MAX_TOKENS="${ROLLOUT_MAX_TOKENS:-1024}"
+export SQL_MAX_ROWS="${SQL_MAX_ROWS:-100000}"
 export ROLLOUT_TEMPERATURE="${ROLLOUT_TEMPERATURE:-0.7}"
 
 RESUME_ARGS=()
@@ -103,6 +104,7 @@ python -u scripts/train_sql_agent.py \
   --max-response-length "$ROLLOUT_MAX_TOKENS" \
   --reward-config "$REWARD_CONFIG" \
   --reward-mode "$REWARD_MODE" \
+  --sql-max-rows "$SQL_MAX_ROWS" \
   --gpus "${GPUS:-1}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.65}" \
   --agl-base-url "http://127.0.0.1:$AGL_SERVER_PORT" \

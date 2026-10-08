@@ -79,7 +79,7 @@ Policy 与 Oracle 的真实边界在代码里是类型隔离的：
 | Paired Bootstrap / McNemar / 报告门禁 | ✓ | 需要原始评测轨迹 |
 | BIRD 数据接入 | 部分 | 需要独立外部分布评测 |
 
-**✓（工具）表示代码功能存在，不表示训练结果已完成。**
+**✓（工具）表示代码功能存在，不表示训练结果已完成。** CPU 验收现在还包括真实 Agent Lightning 1.0.2 / veRL 0.8.0 YAML 契约、OpenAI SDK HTTP 回路、官方 Spider 数据的 Gold 可评分性审计，以及官方 BIRD Mini-Dev SQLite 的数据准备。数据集抽样/过滤结果必须保留覆盖率与异常任务清单。
 
 ## 4. 快速开始（不需要 GPU）
 
@@ -95,6 +95,8 @@ python scripts/build_toy_data.py --output-dir data/toy
 python -m pytest -q
 python scripts/audit_leakage.py --output artifacts/leakage_audit.json
 python scripts/run_experiment_matrix.py --stage smoke   # only prints proposed GPU commands
+python scripts/verify_framework_contract.py --output artifacts/framework_contract.json
+python scripts/offline_readiness.py --output artifacts/offline_readiness.json
 ~~~
 
 **CPU 测试不证明 GRPO 训练成功。** 测试覆盖安全门禁、奖励、算法、可观察反馈、Gold 隔离、Token 预算、统计比较与证据校验器。
@@ -104,12 +106,18 @@ python scripts/run_experiment_matrix.py --stage smoke   # only prints proposed G
 Spider 主训练和同分布 held-out 验证：
 
 ~~~bash
-python scripts/download_spider.py --output-dir data/raw/spider
-python scripts/prepare_spider.py \
-  --spider-root data/raw/spider --output-dir data/spider
+# CPU: prepare official Spider + audited Gold-eligible train/val/test ablations
+bash scripts/prepare_all_datasets.sh
+
+# Details, including exact Gold exclusions and test coverage:
+cat data/spider_eligible/gold_eligibility_audit.json
+cat data/spider_eligible/gold_execution_audit.json
+
+# Explicitly: data/spider is the untouched raw prepared dataset;
+# data/spider_eligible is the Gold-scorable subset used by GRPO.
 ~~~
 
-数据准备为每个条件生成三份数据库级隔离的 Parquet：`train_*`（Spider Train 中用于策略更新）、`val_*`（从 Spider Train 按数据库划分出的内部验证集）、`test_*`（**Spider 官方 Dev**，只用于最终盲评测）。不得把训练过程的验证准确率当作最终测试成绩。
+数据准备会先发现并记录官方 Gold SQL 无法执行的任务，然后生成**严格一致、可追溯且不会被误称官方全量指标**的可评分数据；每个条件生成三份数据库级隔离的 Parquet：`train_*`（Spider Train 中用于策略更新）、`val_*`（从 Spider Train 按数据库划分出的内部验证集）、`test_*`（**Spider 官方 Dev**，只用于最终盲评测）。不得把训练过程的验证准确率当作最终测试成绩。
 
 | 条件 | Context | Turns | Verifier |
 |---|---:|---:|---|
@@ -122,15 +130,25 @@ python scripts/prepare_spider.py \
 BIRD 用于外部泛化，不应与 Spider 混报为同一分布：
 
 ~~~bash
-python scripts/download_bird.py --output-dir data/raw/bird
-# 另外下载官方 BIRD SQLite 数据库及独立开发/测试集
-python scripts/prepare_bird.py \
-  --records /path/to/bird_dev.json \
-  --db-root /path/to/bird/dev_databases \
-  --output data/bird/dev.parquet --split eval --strict-db
+# BIRD filtered-train metadata: fetched and hash-verified by prepare_all_datasets.sh
+cat data/raw/bird/metadata_audit.json
+
+# Official BIRD Mini-Dev SQLite data: GitHub CPU workflow downloads minidev.zip,
+# prepares 500 SELECT-only tasks, classifies unscorable Gold tasks and reports coverage.
+# Offline example after safely extracting official minidev.zip:
+python scripts/prepare_bird_minidev.py \
+  --source-dir /path/to/extracted/minidev \
+  --output-dir data/bird_minidev \
+  --full-gold-audit --gold-timeout 30 --max-rows 100000
+cat data/bird_minidev/bird_mini_dev_manifest.json
 ~~~
 
+
+**BIRD Mini-Dev CPU 数据实测：** 当前官方 500 条 SELECT 数据中，有 498 条通过本项目的 SQLite Gold 校验，2 条已作为 Gold 不可评分案例记录。可以在 498 条 Gold-eligible 子集上进行 Base/GRPO 泛化对照，但这**不能直接称作官方完整 500 条 Mini-Dev EX 排行榜结果**。`scripts/export_bird_official.py` 区分两条路径：内部 498 条 Gold-eligible 子集只能报告明确标注的内部指标；若获得真实模型对原始 **全部 500 条**的无 Gold 盲推理结果，则可交给官方 BIRD EX 评测器独立计分，并由官方代码决定无效 Gold 的处理。官方成绩必须以真实官方评分输出为准。
+
 BIRD 数据文件可能需要遵循官方使用与下载流程。未运行 BIRD 外部评测前，不得声称“跨数据集泛化已验证”。参见 [docs/DATASETS.md](docs/DATASETS.md)。
+
+**完整 500 题 BIRD Mini-Dev 官方 EX 与 498 题内部 Gold-eligible EX 是两种不同协议。** 官方 500 题必须运行 `scripts/run_blind_predictions.py`（不对 Gold 预过滤或预打分），再用 `scripts/export_bird_official.py` 提交到官方 EX 评测器；严格流程见 [docs/BIRD_EVALUATION.md](docs/BIRD_EVALUATION.md)。
 
 ## 6. GPU 最小闭环（先单轮再扩展）
 
@@ -142,8 +160,9 @@ python scripts/preflight.py --require-gpus 1
 
 export MODEL=Qwen/Qwen2.5-Coder-3B-Instruct
 export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
-export TRAIN_FILE="$PWD/data/spider/train_ctx4096_turn1.parquet"
-export VAL_FILE="$PWD/data/spider/val_ctx4096_turn1.parquet"
+export TRAIN_FILE="$PWD/data/spider_eligible/train_ctx4096_turn1.parquet"
+export VAL_FILE="$PWD/data/spider_eligible/val_ctx4096_turn1.parquet"
+export SQL_MAX_ROWS=100000
 export RUN_NAME=grpo_ctx4096_turn1_seed42
 export CONTEXT_LENGTH=4096
 export MAX_TURNS=1
@@ -201,11 +220,11 @@ export PROMPT_TOKEN_BUDGET=4096 MAX_RESPONSE_LENGTH=1024
 bash scripts/start_policy_server.sh
 
 python scripts/run_rollouts.py \
-  --dataset data/spider/test_ctx4096_turn1.parquet \
+  --dataset data/spider_eligible/test_ctx4096_turn1.parquet \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint base-pinned-revision \
   --policy-manifest runs/grpo_ctx4096_turn1_seed42/base_model_identity.json \
-  --context-limit 4096 --max-turns 1 --seed 42 --temperature 0 \
+  --context-limit 4096 --max-turns 1 --max-rows 100000 --seed 42 --temperature 0 \
   --output runs/eval_base/base_trajectories.jsonl
 bash scripts/stop_policy_server.sh
 
@@ -214,11 +233,11 @@ export POLICY_MODEL="$PWD/runs/grpo_ctx4096_turn1_seed42/hf-policy"
 bash scripts/start_policy_server.sh
 
 python scripts/run_rollouts.py \
-  --dataset data/spider/test_ctx4096_turn1.parquet \
+  --dataset data/spider_eligible/test_ctx4096_turn1.parquet \
   --model sql-policy --tokenizer Qwen/Qwen2.5-Coder-3B-Instruct \
   --policy-checkpoint trained-export-sha256 \
   --policy-manifest runs/grpo_ctx4096_turn1_seed42/hf-policy/export_manifest.json \
-  --context-limit 4096 --max-turns 1 --seed 42 --temperature 0 \
+  --context-limit 4096 --max-turns 1 --max-rows 100000 --seed 42 --temperature 0 \
   --output runs/eval_grpo/grpo_trajectories.jsonl
 bash scripts/stop_policy_server.sh
 ~~~
@@ -305,10 +324,11 @@ python scripts/build_report.py \
   --output runs/comparison/REPORT.md
 ~~~
 
-**强制规则：** 无训练实测、无 No-update 控制、缺少权重哈希或未锁定 Base 版本时，证据门禁必须 FAIL；README 不允许自行填入最终准确率。
+**强制规则：** 无训练实测、无 No-update 控制、缺少权重哈希或未锁定 Base 版本时，证据门禁必须 FAIL；README 不允许自行填入最终准确率。若任何 Gold SQL 被排除，必须披露官方集覆盖率；不能将 filtered subset 的准确率称为官方完整 Spider / BIRD 分数。
 
 ## 9. 关键实验局限
 
+- **Gold eligibility。** 训练与测试必须使用 `data/spider_eligible/`，并记录 `gold_eligibility_audit.json`；Gold 失效或执行超时只通过预处理和审计清单处理，不在真实 Rollout 期间挑选样本。
 - **三路隔离。** `train_*`/`val_*` 均来自官方 Train，严格按照数据库划分；最终 `test_*` 来自 Spider 官方 Dev，不能用于挑选超参数或 Checkpoint。
 - **执行等价不等于在所有数据库上语义等价。** 两条 SQL 可能因测试数据偶然一致；重复样本、复杂 NULL/ORDER BY 与重排可能需要补充额外判定。
 - **训练奖励使用 Gold 是允许的；部署期纠错不允许。** 本项目把 Oracle 放在轨迹结束之后。

@@ -14,7 +14,7 @@ class InvalidGoldSQL(RuntimeError):
 @dataclass(slots=True)
 class SqlEvaluator:
     timeout_seconds: float = 8.0
-    max_rows: int = 5000
+    max_rows: int = 100000
     reward_config: RewardConfig = field(default_factory=RewardConfig)
 
     def evaluate(self, task: SqlTask, trajectory: Trajectory) -> dict:

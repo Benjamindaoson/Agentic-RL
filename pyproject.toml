@@ -28,9 +28,10 @@ dependencies = [
 
 [project.optional-dependencies]
 train = [
-  "verl>=0.7.1,<0.9.0",
-  "ray[default]>=2.48.0",
-  "vllm>=0.10.2",
+  "agentlightning==1.0.2",
+  "verl==0.8.0",
+  "ray[default]>=2.48.0,<3",
+  "vllm>=0.10.2,<=0.12.0",
   "flash-attn>=2.8.0",
   "wandb>=0.21.0",
 ]

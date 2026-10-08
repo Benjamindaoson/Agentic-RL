@@ -13,22 +13,32 @@ python -m pytest -q
 ## 2. Fixed datasets
 
 ~~~bash
-python scripts/download_spider.py --output-dir data/raw/spider
-python scripts/prepare_spider.py --spider-root data/raw/spider --output-dir data/spider
+bash scripts/prepare_all_datasets.sh
+python scripts/verify_framework_contract.py --output artifacts/framework_contract.json
+# Review excluded Gold SQL tasks, their reasons and final-test coverage
+cat data/spider_eligible/gold_eligibility_audit.json
 python scripts/run_experiment_matrix.py --stage main
 ~~~
 
-Confirm all three database partitions are disjoint: `train_*` and `val_*` come from official Spider Train (group split by DB), while `test_*` is reserved official Spider Dev for final blind evaluation. The trainer rejects Train/Val overlap. Base vs GRPO must use `test_ctx4096_turn1.parquet`, not `val_*`.
+Confirm all three database partitions are disjoint: `train_*` and `val_*` come from official Spider Train (group split by DB), while `test_*` is reserved official Spider Dev for final blind evaluation. The trainer rejects Train/Val overlap. Base vs GRPO must use `data/spider_eligible/test_ctx4096_turn1.parquet`, not `val_*`.
+
+## Real-dataset acceptance (CPU)
+
+The pipeline downloads official Spider 1.0 and the pinned canonical ZIP mirror with a verifiable SHA-256, classifies non-executable Gold SQL and Gold result truncation, and emits a **Gold-eligible subset**. This exclusion is always documented, including its final-test denominator and exact excluded IDs.
+
+Independent BIRD Mini-Dev SQLite can be prepared and Gold audited using `scripts/prepare_bird_minidev.py`. The CPU dataset workflows save source hashes, subset coverage and rejected cases, not unverifiable performance figures.
+
+CI tests the real AGL 1.0.2 / veRL 0.8.0 YAML configuration and actual OpenAI-compatible HTTP request format with mocked server responses; it does not update model parameters.
 
 ## 3. GPU training
 
 ~~~bash
 export RUN_NAME=ctx4096_turn1_seed42
 export MODEL_REVISION=YOUR_40_CHARACTER_HF_COMMIT_SHA
-export TRAIN_FILE="$PWD/data/spider/train_ctx4096_turn1.parquet"
-export VAL_FILE="$PWD/data/spider/val_ctx4096_turn1.parquet"
+export TRAIN_FILE="$PWD/data/spider_eligible/train_ctx4096_turn1.parquet"
+export VAL_FILE="$PWD/data/spider_eligible/val_ctx4096_turn1.parquet"
 export CONTEXT_LENGTH=4096 MAX_TURNS=1
-export ROLLOUT_MAX_TOKENS=1024
+export ROLLOUT_MAX_TOKENS=1024 SQL_MAX_ROWS=100000
 bash scripts/run_local_training.sh --seed 42 --epochs 1 --save-freq 1
 ~~~
 
@@ -94,3 +104,45 @@ An incomplete evidence gate intentionally produces exit code 1. Fix the missing 
 - Report actual GPU time, max memory and inference token usage; do not estimate these as measurements.
 
 **Status:** Until the actual GPU run exists, all training claims remain unverified irrespective of green CPU CI.
+
+
+## Strict pre-GPU completion gate
+
+The lightweight CI check only validates code. For **actual** CPU data readiness, prepare and audit Gold-eligible Spider records and the real SQLite BIRD Mini-Dev first, then run:
+
+~~~bash
+python scripts/offline_readiness.py \
+  --require-datasets \
+  --eligible-manifest data/spider_eligible/manifest.json \
+  --bird-parquet data/bird_mini_dev/bird_mini_dev_select.parquet \
+  --require-framework-contract \
+  --output artifacts/offline_readiness_full.json
+~~~
+
+The command deliberately fails if either real dataset is missing, the Gold-eligibility exclusion list is incomplete, a retained Gold SQL fails under its recorded execution budget, or the pinned Agent Lightning / veRL installed configurations do not match. It cannot establish successful CUDA execution, vLLM checkpoint reload, or real optimizer updates; these are separate GPU-dependent evidence gates.
+
+Spider prepared datasets are **Gold-eligible subsets with exact exclusions disclosed**, not automatically official unfiltered leaderboard scores. Train, internal validation and final test must use the *same* filtered split provenance.
+
+
+## Data transfer without renting a GPU for preprocessing
+
+Run the Spider/BIRD download and CPU eligibility audits on a cheap local/CPU
+machine, then transfer the official SQLite files plus the prepared Parquet files
+to the GPU container. Since prepared Parquet stores absolute SQLite paths, do
+not upload it without rewriting these paths against the destination mount:
+
+~~~bash
+python scripts/relocate_spider_data.py \
+  --source-manifest /uploaded/spider_eligible/manifest.json \
+  --db-root /mounted/spider/database \
+  --output-dir /mounted/spider_for_training \
+  --verify-gold --max-rows 100000
+export TRAIN_FILE=/mounted/spider_for_training/train_ctx4096_turn1.parquet
+export VAL_FILE=/mounted/spider_for_training/val_ctx4096_turn1.parquet
+~~~
+
+The relocation script fails if any database is missing/ambiguous, preserves
+the same task ID/Gold/split/corpus semantics, copies exclusion provenance and
+emits an audit with source/destination Parquet SHA-256. Re-run the CPU strict
+gate on the new mount before paying for a GPU session. A successful relocation
+does not count as GRPO optimizer evidence.

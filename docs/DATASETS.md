@@ -1,45 +1,57 @@
-# 数据集与严格切分
+# Datasets: real SQLite and Gold eligibility
 
-## Spider 1.0 — 三路数据库级隔离
+## 1. Spider 1.0: preserved official source + disclosed subset
 
-Spider 1.0 官方 Train 与 Dev 含不同数据库。禁止再将官方 Dev 作为 veRL 训练期间的验证集。
-`scripts/prepare_spider.py` 从 Spider 官方 Train 中按固定随机种子和 **数据库 ID** 划分：
+Run the complete, CPU-only preparation:
 
-| 文件 | 来源 | 用途 |
-|---|---|---|
-| `train_ctx*_turn*.parquet` | 官方 Train DB 的训练部分 | GRPO 参数更新 |
-| `val_ctx*_turn*.parquet` | 官方 Train DB 中按数据库划出的内部验证集 | 训练期间模型选择 |
-| `test_ctx*_turn*.parquet` | **官方 Dev（独立数据库）** | **最终 Base/GRPO/Controls 盲评测** |
+```bash
+bash scripts/prepare_all_datasets.sh
+```
 
-三个集合数据库 ID 两两不重叠；如有重叠，准备脚本将报错。每个设置写入 `manifest.json`，记录切分种子、样本数、数据库数与数据库 ID 哈希。
+The canonical Spider archive is SHA-256 locked to `00636695dabed6b5f4b8328a16b13e069a2f16591d5efcce57660669c85b121b`. The downloader uses an immutable Hugging Face mirror (`HAL-9001/spider-databases`) or the original Yale Google Drive fallback; neither is trusted without the exact same digest. It stores the ZIP provenance.
 
-~~~bash
-python scripts/download_spider.py --output-dir data/raw/spider
-python scripts/prepare_spider.py \
-  --spider-root data/raw/spider --output-dir data/spider \
-  --split-seed 42 --internal-val-fraction 0.10
-~~~
+The first preparation stage creates `data/spider/{train,val,test}_ctx*_turn*.parquet` with six matched ablations. Train / internal validation / final official Dev are database-disjoint.
 
-支持上下文 2048/4096、最大轮次 1/3 和三轮显式自检消融。最终评测必须读取与对应实验预算一致的 `test_*` Parquet，不使用训练时的 `val_*`。
+**Official reference SQL occasionally fails in the published SQLite release.** `scripts/filter_gold_sql.py` executes every original Gold query with a declared timeout and row cap. It then produces matched `data/spider_eligible/{train,val,test}_ctx*_turn*.parquet` files and preserves:
 
-## BIRD — 仅在独立 held-out 数据上验证泛化
+- `gold_eligibility_audit.json`: exact excluded task IDs, errors, sample counts and denominator coverage
+- `manifest.json`: the Gold-eligible input files, split DB IDs and hashes
+- `gold_execution_audit.json`: final verification of every retained query
 
-`scripts/download_bird.py` 下载公开记录元数据及 Mini-Dev 工具仓库。数据库和 held-out 开发集数据需要遵循 BIRD 官方流程手动取得；不得以 BIRD Train 伪装外部泛化测试。
+Training and final held-out blind evaluation must use `data/spider_eligible/`. Training and evaluation must use the same `SQL_MAX_ROWS=100000`. An eligible subset's accuracy must **never** be described as an official full Spider Dev score if any test questions were excluded.
 
-~~~bash
-python scripts/evaluate_bird.py \
-  --records /path/to/official-bird-dev.json \
-  --db-root /path/to/bird-dev-databases \
-  --output-dir runs/bird_external \
-  --policy-checkpoint ACTUAL_MODEL_IDENTITY \
-  --policy-manifest /path/to/export_manifest.json
-~~~
+This preprocessing evaluates Gold only once; the policy never sees Gold or an oracle correctness signal during rollout.
 
-评测脚本将因数据库缺失或不支持的记录被过滤而拒绝报告完整集分数。其结果是**项目内部 SQLite 执行匹配 EX**，不是 BIRD 官方 R-VES 排行榜分数，后者须按官方独立工具另行验证。
+## 2. BIRD filtered-train metadata
 
-## 数据治理
+`scripts/download_bird.py` resolves the actual Hugging Face dataset revision for `birdsql/bird23-train-filtered` and stores source and output SHA-256. `scripts/validate_bird_metadata.py` checks all 6,601 records in CI. **This does not download the huge BIRD training database files**, which remain separately required if BIRD training is undertaken.
 
-- 不将原始 Spider/BIRD SQLite 数据库、Parquet、模型权重或私有任务运行轨迹提交 Git。
-- 每次运行保存数据集 SHA-256、任务 ID 集合 SHA-256、切分种子和模型身份。
-- SQL 环境使用 SQLite 只读 URI、query_only、SQL 安全检查、结果上限与超时。
-- 只有在 Policy 轨迹完全结束后，Gold SQL 才用于后置评分。
+## 3. Official BIRD Mini-Dev SQLite
+
+The CPU GitHub workflow `.github/workflows/bird-mini-dev.yml` downloads and verifies the public BIRD Mini-Dev ZIP, extracts it with size and path safety protections, prepares the **500 SELECT-only** subset and verifies actual database content. `scripts/filter_bird_gold.py` records any timeout or invalid-Gold exclusions, with true denominator and coverage.
+
+To run locally after downloading and safely extracting `minidev.zip`:
+
+```bash
+python scripts/prepare_bird_minidev.py \
+  --source-dir /path/to/extracted/minidev \
+  --output-dir data/bird_minidev \
+  --full-gold-audit --gold-timeout 30 --max-rows 100000
+```
+
+Reports distinguish:
+
+- Official Mini-Dev SELECT-only question count
+- Gold-eligible count and excluded SQL with reasons
+- Gold validation timeout, result cap and input records SHA-256
+- Model evaluation (requires real inference; **not completed by CPU preparation**)
+
+Official BIRD leaderboard EX/R-VES require running the original evaluation scripts on the unfiltered official protocol. Internal SQL result-equivalence on a filtered subset is a separately named metric.
+
+## 4. Experimental restrictions
+
+Never train on Spider official Dev or BIRD Mini-Dev. Keep Gold SQL exclusively in post-rollout evaluation. Hash datasets, held-out task IDs and model checkpoints. Log all attempted tasks including runner failures. Do not publish any previously supplied example figures as new results.
+
+## Official BIRD Mini-Dev EX adapter
+
+A separate exporter at `scripts/export_bird_official.py` can align frozen blind trajectories with the upstream BIRD evaluator by original task index and database ID. It refuses official full-set scoring when Gold eligibility has excluded any instance. The current 500-case official Mini-Dev SQLite CPU audit identified 498 Gold-eligible cases and two documented exclusions. Use `scripts/evaluate_bird.py` on that explicit subset for cross-domain tests; it is NOT the same metric or denominator as the unfiltered official leaderboard. After a genuine model rollout and if a future canonical release yields full Gold coverage, the exporter can invoke upstream evaluation_ex.py with strict index, difficulty and source-hash checks.

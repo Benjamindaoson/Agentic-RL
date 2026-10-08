@@ -53,6 +53,41 @@ async def main_async(args):
             task.metadata["explicit_check"] = args.explicit_check
     if len({(t.context_limit, t.max_turns, bool(t.metadata.get("explicit_check"))) for t in tasks}) != 1:
         raise ValueError("evaluation tasks must have identical context/turn/check budgets")
+    coverage = None
+    audit_file = data_file.parent / "gold_eligibility_audit.json"
+    if tasks[0].dataset == "spider-1.0":
+        if any(t.split != "test" for t in tasks):
+            raise ValueError("published Spider blind evaluation must use held-out test split")
+        if not audit_file.is_file():
+            raise ValueError("Spider evaluation requires an explicit Gold eligibility audit")
+        eligibility = json.loads(audit_file.read_text(encoding="utf-8"))
+        coverage = {
+            "gold_eligibility_sha256": sha256_file(audit_file),
+            "full_official_test_coverage": eligibility["full_official_dev_coverage"],
+            "eligible_test_fraction": eligibility["coverage_ratio"]["test"],
+            "eligible_test_samples": eligibility["eligible_samples"]["test"],
+            "test_excluded_gold": eligibility["excluded_by_split"]["test"],
+        }
+        if not args.limit and len(tasks) != coverage["eligible_test_samples"]:
+            raise ValueError("test Parquet sample count does not match eligibility audit")
+    if tasks[0].dataset == "bird-sql":
+        bird_audit_file = data_file.with_suffix(".gold_eligibility.json")
+        if not bird_audit_file.is_file():
+            raise ValueError("BIRD evaluation requires Gold eligibility manifest alongside Parquet")
+        bird_audit = json.loads(bird_audit_file.read_text(encoding="utf-8"))
+        if (bird_audit.get("output") != str(data_file) or
+                bird_audit.get("gold_timeout_seconds") != args.sql_timeout or
+                bird_audit.get("gold_max_rows") != args.max_rows):
+            raise ValueError("BIRD Gold audit input or runtime budget does not match")
+        coverage = {
+            "gold_eligibility_sha256": sha256_file(bird_audit_file),
+            "eligible_test_fraction": bird_audit["coverage_ratio"],
+            "eligible_test_samples": bird_audit["eligible_samples"],
+            "test_excluded_gold": bird_audit["excluded_count"],
+            "official_full_bird_score": False,
+        }
+        if not args.limit and len(tasks) != coverage["eligible_test_samples"]:
+            raise ValueError("BIRD filtered dataset sample count differs from eligibility audit")
     budget = {
         "context_limit": tasks[0].context_limit,
         "max_turns": tasks[0].max_turns,
@@ -73,6 +108,7 @@ async def main_async(args):
         "policy_identity_sha256": sha256_file(Path(args.policy_manifest)) if args.policy_manifest else None,
         "seed": args.seed, "temperature": args.temperature,
         "budget": budget,
+        "gold_eligible_coverage": coverage,
     }
     protocol["fingerprint"] = fingerprint(protocol)
     output = Path(args.output).resolve()
@@ -156,7 +192,9 @@ async def main_async(args):
         "model": args.model, "policy_checkpoint": args.policy_checkpoint,
         "policy_identity_sha256": protocol["policy_identity_sha256"],
         "tokenizer": args.tokenizer, "temperature": args.temperature,
-        "seed": args.seed, "budget": budget, "trajectories_sha256": sha256_file(output),
+        "seed": args.seed, "budget": budget,
+        "gold_eligible_coverage": coverage,
+        "trajectories_sha256": sha256_file(output),
     })
     metrics_path = output.with_name(output.stem + "_metrics.json")
     metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -183,7 +221,7 @@ def main():
     ap.add_argument("--explicit-check", action=argparse.BooleanOptionalAction, default=None)
     ap.add_argument("--max-schema-chars", type=int, default=12000)
     ap.add_argument("--sql-timeout", type=float, default=8.0)
-    ap.add_argument("--max-rows", type=int, default=5000)
+    ap.add_argument("--max-rows", type=int, default=100000)
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--resume", action="store_true")

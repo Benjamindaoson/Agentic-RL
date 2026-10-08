@@ -113,17 +113,39 @@ def default_overrides(args) -> dict[str, Any]:
 
 
 def build_config(args, dotlist: Sequence[str]) -> Any:
+    """Compose the genuine installed veRL + Agent Lightning YAML hierarchy.
+
+    Hydra's upstream pkg://verl.trainer.config searchpath imports verl.__init__,
+    which eagerly imports CUDA-adjacent optional dependencies even when the
+    operation is only CPU config validation. Loading the SAME packaged
+    ppo_trainer.yaml group tree from its absolute path avoids that incidental
+    import, and merging Agent Lightning's config.yaml with defaults removed
+    reproduces upstream (ppo_trainer -> _self_) merge order.
+    """
+    import importlib.metadata
     import importlib.resources
 
-    config_dir = str(importlib.resources.files("agentlightning.verl"))
-    with initialize_config_dir(config_dir=config_dir, version_base=None):
-        base = compose(config_name="config")
+    verl_root = Path(importlib.metadata.distribution("verl").locate_file("verl/trainer/config")).resolve()
+    agl_root = Path(str(importlib.resources.files("agentlightning.verl"))).resolve()
+    if not (verl_root / "ppo_trainer.yaml").is_file():
+        raise FileNotFoundError(f"veRL distribution is missing ppo_trainer.yaml: {verl_root}")
+    if not (agl_root / "config.yaml").is_file():
+        raise FileNotFoundError(f"Agent Lightning distribution is missing config.yaml: {agl_root}")
+    with initialize_config_dir(config_dir=str(verl_root), version_base=None):
+        base = compose(config_name="ppo_trainer")
+    overlay = OmegaConf.load(agl_root / "config.yaml")
+    # The original AGL defaults are ["ppo_trainer", "_self_"]. Hydra and defaults
+    # entries are parser directives, not runtime trainer configuration.
+    if list(overlay.defaults) != ["ppo_trainer", "_self_"]:
+        raise ValueError(f"Unexpected Agent Lightning config composition order: {overlay.defaults}")
+    del overlay["defaults"]
+    if "hydra" in overlay:
+        del overlay["hydra"]
     OmegaConf.set_struct(base, False)
     config = OmegaConf.merge(
-        base, OmegaConf.create(default_overrides(args)),
+        base, overlay, OmegaConf.create(default_overrides(args)),
         OmegaConf.from_dotlist(list(dotlist)),
     )
-    # Enforce the central invariant AFTER all overrides have been applied.
     if int(config.data.max_prompt_length) != int(config.agentlightning.trace_aggregator.trajectory_max_prompt_length):
         raise ValueError("prompt length and trajectory aggregator prompt budget must match")
     if int(config.data.max_response_length) != int(config.agentlightning.trace_aggregator.trajectory_max_response_length):
@@ -131,7 +153,6 @@ def build_config(args, dotlist: Sequence[str]) -> Any:
     if str(config.algorithm.adv_estimator).lower() != "grpo":
         raise ValueError("this project requires GRPO; do not override the advantage estimator")
     return config
-
 
 def validate_training_dataset(train_rows, val_rows, args) -> dict:
     if not train_rows or not val_rows:
@@ -207,6 +228,7 @@ def parse_args():
     ap.add_argument("--wandb", action=argparse.BooleanOptionalAction, default=False)
     ap.add_argument("--reward-config", default="configs/reward.yaml")
     ap.add_argument("--reward-mode", choices=["execution", "validity_only"], default="execution")
+    ap.add_argument("--sql-max-rows", type=int, default=100000)
     ap.add_argument("--allow-schema-overlap", action="store_true", help="toy/testing ONLY; forbidden for Spider")
     ap.add_argument("--seed", type=int, default=42)
     return ap.parse_known_args()
@@ -218,12 +240,35 @@ def main():
         raise ValueError("invalid GRPO group/gpu/learning-rate")
     if args.allow_schema_overlap and "spider" in args.train_file.lower():
         raise ValueError("Spider must remain cross-schema")
+    if args.sql_max_rows < 1:
+        raise ValueError("SQL_MAX_ROWS must be positive")
     train_path, val_path = Path(args.train_file).resolve(), Path(args.val_file).resolve()
     rows = {
         "train": cast(Sequence[Any], HuggingFaceDataset.from_parquet(str(train_path)).to_list()),
         "val": cast(Sequence[Any], HuggingFaceDataset.from_parquet(str(val_path)).to_list()),
     }
     dataset_summary = validate_training_dataset(rows["train"], rows["val"], args)
+    if "spider" in args.train_file.lower():
+        eligible = train_path.parent / "gold_eligibility_audit.json"
+        prepared = train_path.parent / "manifest.json"
+        if train_path.parent != val_path.parent or not eligible.is_file() or not prepared.is_file():
+            raise ValueError("Spider training requires Gold-eligible train/val files and a validated manifest")
+        eligibility = json.loads(eligible.read_text(encoding="utf-8"))
+        manifest_data = json.loads(prepared.read_text(encoding="utf-8"))
+        if not eligibility.get("verified_gold_eligible") or not manifest_data.get("gold_eligible_subset"):
+            raise ValueError("Gold-eligible Spider data audit failed")
+        if (eligibility.get("max_result_rows") != args.sql_max_rows or
+                manifest_data.get("gold_filter_max_rows") != args.sql_max_rows):
+            raise ValueError("training SQL row cap differs from preverified Spider Gold limit")
+        if not any(
+            Path(item["files"]["train"]).resolve() == train_path and
+            Path(item["files"]["val"]).resolve() == val_path
+            for item in manifest_data.get("variants", [])
+        ):
+            raise ValueError("train/val files are not a matched prepared Spider variant")
+        dataset_summary["gold_eligibility_audit_sha256"] = sha256_file(eligible)
+        dataset_summary["gold_eligible_subset"] = True
+        dataset_summary["official_test_coverage"] = eligibility["coverage_ratio"]["test"]
     reward_cfg = load_reward_config(args.reward_config, args.reward_mode)
     config = build_config(args, dotlist)
     run_dir = Path(args.run_dir).resolve()
@@ -234,6 +279,7 @@ def main():
     os.environ["POLICY_PROMPT_TOKEN_LIMIT"] = str(args.context_length)
     os.environ["POLICY_TOKENIZER_PATH"] = args.model
     os.environ["ROLLOUT_MAX_TOKENS"] = str(args.max_response_length)
+    os.environ["SQL_MAX_ROWS"] = str(args.sql_max_rows)
     os.environ["ROLLOUT_TEMPERATURE"] = os.environ.get("ROLLOUT_TEMPERATURE", "0.7")
     os.environ["PYTHONHASHSEED"] = str(args.seed)
     try:
@@ -254,6 +300,7 @@ def main():
         "base_model_revision": args.base_model_revision or "LOCAL_WEIGHT_HASH" if (run_dir / "base_model_identity.json").exists() else "UNPINNED",
         "base_model_identity_file": "base_model_identity.json" if (run_dir / "base_model_identity.json").exists() else None,
         "seed": args.seed, "learning_rate": args.learning_rate,
+        "sql_max_rows": args.sql_max_rows,
         "reward_mode": reward_cfg.mode, "reward_config": reward_cfg.to_dict(),
         "reward_config_sha256": sha256_file(Path(args.reward_config)),
         "train_file": str(train_path), "train_sha256": sha256_file(train_path),
@@ -275,6 +322,7 @@ def main():
             "base_model", "base_model_revision", "train_sha256", "val_sha256",
             "context_limit", "max_response_length", "max_turns", "explicit_check",
             "reward_config_sha256", "reward_mode", "group_size", "seed", "learning_rate",
+            "sql_max_rows",
         )
         changes = [key for key in locked if previous.get(key) != manifest.get(key)]
         if changes:

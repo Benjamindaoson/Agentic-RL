@@ -34,7 +34,7 @@ def normalize_rows(rows: list[tuple[Any, ...]] | list[list[Any]]) -> list[tuple[
     return [tuple(_normalize_scalar(v) for v in row) for row in rows]
 
 
-def execute_sql(db_path: str | Path, sql: str, timeout_seconds: float = 8.0, max_rows: int = 5000) -> ExecutionResult:
+def execute_sql(db_path: str | Path, sql: str, timeout_seconds: float = 8.0, max_rows: int = 100000) -> ExecutionResult:
     guard = validate_read_only_sql(sql)
     if not guard.valid:
         return ExecutionResult(sql=sql, valid=False, safe=False, executed=False, error_type="parse_error", error_message=guard.error)
@@ -114,7 +114,7 @@ def execution_match(
     predicted_sql: str,
     gold_sql: str,
     timeout_seconds: float = 8.0,
-    max_rows: int = 5000,
+    max_rows: int = 100000,
 ) -> tuple[bool, ExecutionResult, ExecutionResult]:
     pred = execute_sql(db_path, predicted_sql, timeout_seconds=timeout_seconds, max_rows=max_rows)
     gold = execute_sql(db_path, gold_sql, timeout_seconds=timeout_seconds, max_rows=max_rows)

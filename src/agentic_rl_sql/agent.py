@@ -114,7 +114,7 @@ class SqlAgentRunner:
 
     def __init__(
         self, client: AsyncChatClient, *, max_schema_chars: int = 12000,
-        timeout_seconds: float = 8.0, max_rows: int = 5000,
+        timeout_seconds: float = 8.0, max_rows: int = 100000,
         token_counter: MessageCounter | None = None,
     ) -> None:
         self.client = client
