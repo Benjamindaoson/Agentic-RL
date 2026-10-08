@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 from agentic_rl_sql.dataset import read_training_parquet, unpack_task, write_parquet
 from agentic_rl_sql.execution import execute_sql
@@ -38,7 +39,7 @@ def prepared_tasks(path: str | Path):
 
 def filter_manifest(
     manifest_path: str | Path, output_dir: str | Path, *,
-    max_rows: int = 100000, timeout: float = 8.0,
+    max_rows: int = 5000, timeout: float = 8.0,
 ) -> dict:
     manifest_path = Path(manifest_path).resolve()
     output_dir = Path(output_dir).resolve()
@@ -138,7 +139,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-manifest", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--max-rows", type=int, default=100000)
+    parser.add_argument("--max-rows", type=int, default=5000)
     parser.add_argument("--sql-timeout", type=float, default=8.0)
     args = parser.parse_args()
     result = filter_manifest(

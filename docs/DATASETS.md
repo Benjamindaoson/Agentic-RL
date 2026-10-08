@@ -43,3 +43,7 @@ python scripts/evaluate_bird.py \
 - 每次运行保存数据集 SHA-256、任务 ID 集合 SHA-256、切分种子和模型身份。
 - SQL 环境使用 SQLite 只读 URI、query_only、SQL 安全检查、结果上限与超时。
 - 只有在 Policy 轨迹完全结束后，Gold SQL 才用于后置评分。
+
+## Official Spider Gold SQL compatibility
+
+The raw official Spider 1.0 annotations include some queries that are not executable under the bundled SQLite DBs, and some whose results exceed the runtime 5,000-row limit. Do not drop these silently or claim full-set accuracy. Run `scripts/filter_gold_sql.py --input-manifest data/spider/manifest.json --output-dir data/spider_eligible --max-rows 5000` to create a **documented Gold-eligible subset** with exact per-split exclusion IDs and coverage. Use `data/spider_eligible/` consistently for training, internal validation and held-out results, while retaining the source data and audit manifests. A result measured on this subset is *not* the official full Spider Dev score.
