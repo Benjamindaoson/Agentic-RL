@@ -31,7 +31,7 @@ def find_inputs(source: Path) -> tuple[Path, Path]:
 def prepare(
     source_dir: Path, output_dir: Path, *, max_turns: int = 1,
     context_limit: int = 4096, full_gold_audit: bool = False,
-    max_rows: int = 100000,
+    max_rows: int = 100000, gold_timeout: float = 30.0,
 ) -> dict:
     records, db_root = find_inputs(source_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -46,9 +46,19 @@ def prepare(
     prepare_meta = json.loads(path.with_suffix(".manifest.json").read_text(encoding="utf-8"))
     if not prepare_meta["samples"]:
         raise ValueError("Mini-Dev SQLite preparation had zero SELECT queries")
+    effective = path
+    gold_audit = None
+    if full_gold_audit:
+        effective = output_dir / "bird_mini_dev_eligible.parquet"
+        subprocess.run([
+            sys.executable, str(ROOT / "scripts/filter_bird_gold.py"),
+            "--input", str(path), "--output", str(effective),
+            "--sql-timeout", str(gold_timeout), "--max-rows", str(max_rows),
+        ], check=True)
+        gold_audit = json.loads(effective.with_suffix(".gold_eligibility.json").read_text(encoding="utf-8"))
     args = [
         sys.executable, str(ROOT / "scripts/validate_datasets.py"),
-        "--bird-parquet", str(path), "--allow-bird-subset",
+        "--bird-parquet", str(effective), "--allow-bird-subset",
         "--max-rows", str(max_rows),
         "--output", str(output_dir / "bird_mini_dev_validation.json"),
     ]
@@ -65,6 +75,11 @@ def prepare(
         "skipped_missing_database": prepare_meta["skipped_missing_database"],
         "database_root": str(db_root),
         "validated_gold_sql": bool(full_gold_audit and validation.get("complete")),
+        "eligible_parquet": str(effective),
+        "eligible_samples": gold_audit["eligible_samples"] if gold_audit else prepare_meta["samples"],
+        "gold_excluded_count": gold_audit["excluded_count"] if gold_audit else None,
+        "gold_coverage_ratio": gold_audit["coverage_ratio"] if gold_audit else None,
+        "full_mini_dev_coverage": gold_audit["comparable_to_full_official_mini_dev"] if gold_audit else None,
         "source_is_external_to_spider": True,
         "claimed_official_leaderboard_metric": False,
     }
@@ -83,11 +98,13 @@ def main():
     parser.add_argument("--max-turns", type=int, default=1)
     parser.add_argument("--max-rows", type=int, default=100000)
     parser.add_argument("--full-gold-audit", action="store_true")
+    parser.add_argument("--gold-timeout", type=float, default=30.0)
     args = parser.parse_args()
     report = prepare(
         Path(args.source_dir), Path(args.output_dir),
         max_turns=args.max_turns, context_limit=args.context_limit,
         max_rows=args.max_rows, full_gold_audit=args.full_gold_audit,
+        gold_timeout=args.gold_timeout,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
