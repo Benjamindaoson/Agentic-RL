@@ -43,6 +43,8 @@ Run status is **not** verified merely because the trainer returns. Inspect:
 
 Pin the actual Hugging Face base model revision and validate the local weight identity before making a publication-level provenance claim.
 
+To continue an interrupted training run, keep the exact same inputs/model/configuration and use `RESUME=1 bash scripts/run_local_training.sh` with the original `RUN_NAME`. This calls veRL auto-resume; the trainer refuses changed dataset fingerprints, context, reward, seed, learning rate or checkpoint family. Do not use resume to combine different experiments.
+
 ## 4. FSDP export and vLLM
 
 ~~~bash

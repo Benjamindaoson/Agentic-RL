@@ -1,3 +1,8 @@
+# Defaults can be overridden on the command line or from the environment.
+DATA_ROOT ?= data
+SPIDER_ROOT ?= data/raw/spider
+RUN_ROOT ?= runs
+
 .PHONY: install install-train test lint toy prepare-spider preflight matrix-plan train evaluate leakage-audit evidence report
 
 install:
