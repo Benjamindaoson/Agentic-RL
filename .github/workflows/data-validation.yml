@@ -40,7 +40,7 @@ jobs:
         run: |
           python scripts/validate_datasets.py \
             --spider-manifest data/spider/manifest.json \
-            --sql-timeout 8 --max-rows 5000 \
+            --sql-timeout 8 --max-rows 100000 \
             --output artifacts/spider_gold_execution_audit.json
       - name: Upload reproducibility artifacts (no raw databases)
         if: always()
