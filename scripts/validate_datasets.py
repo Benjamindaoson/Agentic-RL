@@ -85,7 +85,7 @@ def validate_parquet(
 
 def validate_spider(
     manifest_path: str | Path, *, verify_gold: bool = True,
-    timeout: float = 8.0, max_rows: int = 5000,
+    timeout: float = 8.0, max_rows: int = 100000,
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path).resolve()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -144,7 +144,7 @@ def validate_spider(
 
 def validate_bird(
     path: str | Path, *, require_all_records: bool = True,
-    verify_gold: bool = True, timeout: float = 8, max_rows: int = 5000,
+    verify_gold: bool = True, timeout: float = 8, max_rows: int = 100000,
 ) -> dict[str, Any]:
     path = Path(path).resolve()
     manifest_path = path.with_suffix(".manifest.json")

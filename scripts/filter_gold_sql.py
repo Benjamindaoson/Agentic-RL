@@ -39,7 +39,7 @@ def prepared_tasks(path: str | Path):
 
 def filter_manifest(
     manifest_path: str | Path, output_dir: str | Path, *,
-    max_rows: int = 5000, timeout: float = 8.0,
+    max_rows: int = 100000, timeout: float = 8.0,
 ) -> dict:
     manifest_path = Path(manifest_path).resolve()
     output_dir = Path(output_dir).resolve()
