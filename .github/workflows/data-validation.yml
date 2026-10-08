@@ -24,10 +24,15 @@ jobs:
       - name: Install CPU dataset dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install gdown pandas pyarrow pyyaml sqlglot
+          pip install gdown huggingface_hub hf_xet pandas pyarrow pyyaml sqlglot
           pip install -e . --no-deps
-      - name: Download official Spider 1.0
-        run: python scripts/download_spider.py --output-dir data/raw/spider
+      - name: Cache canonical Spider ZIP across CPU dataset audit runs
+        uses: actions/cache@v4
+        with:
+          path: data/raw/spider/spider_data.zip
+          key: spider-1.0-00636695dabed6b5f4b8328a16b13e069a2f16591d5efcce57660669c85b121b
+      - name: Download canonical hash-locked Spider 1.0 archive (mirror / Yale fallback)
+        run: python scripts/download_spider.py --output-dir data/raw/spider --keep-zip
       - name: Prepare three-way schema-disjoint data
         run: python scripts/prepare_spider.py --spider-root data/raw/spider --output-dir data/spider
       - name: Audit complete dataset structure
