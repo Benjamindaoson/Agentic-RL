@@ -36,10 +36,16 @@ jobs:
             --spider-manifest data/spider/manifest.json \
             --skip-gold-execution \
             --output artifacts/spider_structural_audit.json
-      - name: Audit real Gold SQL with SQLite
+      - name: Classify real Gold annotations without silent exclusions
+        run: |
+          python scripts/filter_gold_sql.py \
+            --input-manifest data/spider/manifest.json \
+            --output-dir data/spider_eligible \
+            --sql-timeout 8 --max-rows 100000
+      - name: Recheck every retained Gold SQL on real SQLite
         run: |
           python scripts/validate_datasets.py \
-            --spider-manifest data/spider/manifest.json \
+            --spider-manifest data/spider_eligible/manifest.json \
             --sql-timeout 8 --max-rows 100000 \
             --output artifacts/spider_gold_execution_audit.json
       - name: Upload reproducibility artifacts (no raw databases)
@@ -50,6 +56,8 @@ jobs:
           path: |
             data/raw/spider/download_manifest.json
             data/spider/manifest.json
+            data/spider_eligible/manifest.json
+            data/spider_eligible/gold_eligibility_audit.json
             artifacts/spider_structural_audit.json
             artifacts/spider_gold_execution_audit.json
           if-no-files-found: warn
