@@ -62,7 +62,13 @@ def validate_parquet(
             key = (str(db_path.resolve()), task.gold_sql)
             if key not in gold_cache:
                 outcome = execute_sql(db_path, task.gold_sql, timeout_seconds=timeout, max_rows=max_rows)
-                gold_cache[key] = (bool(outcome.executed and not outcome.truncated), outcome.error_type or ("truncated" if outcome.truncated else "ok"))
+                gold_cache[key] = (
+                    bool(outcome.executed and not outcome.truncated),
+                    (
+                        f"{outcome.error_type or ('truncated' if outcome.truncated else 'ok')}: "
+                        f"{(outcome.error_message or '')[:250]}; gold_sql={task.gold_sql[:250]!r}"
+                    ),
+                )
             if not gold_cache[key][0]:
                 gold_failures.append({"task_id": task.task_id, "error": gold_cache[key][1]})
     if gold_failures:
