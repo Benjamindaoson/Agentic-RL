@@ -113,17 +113,39 @@ def default_overrides(args) -> dict[str, Any]:
 
 
 def build_config(args, dotlist: Sequence[str]) -> Any:
+    """Compose the genuine installed veRL + Agent Lightning YAML hierarchy.
+
+    Hydra's upstream pkg://verl.trainer.config searchpath imports verl.__init__,
+    which eagerly imports CUDA-adjacent optional dependencies even when the
+    operation is only CPU config validation. Loading the SAME packaged
+    ppo_trainer.yaml group tree from its absolute path avoids that incidental
+    import, and merging Agent Lightning's config.yaml with defaults removed
+    reproduces upstream (ppo_trainer -> _self_) merge order.
+    """
+    import importlib.metadata
     import importlib.resources
 
-    config_dir = str(importlib.resources.files("agentlightning.verl"))
-    with initialize_config_dir(config_dir=config_dir, version_base=None):
-        base = compose(config_name="config")
+    verl_root = Path(importlib.metadata.distribution("verl").locate_file("verl/trainer/config")).resolve()
+    agl_root = Path(str(importlib.resources.files("agentlightning.verl"))).resolve()
+    if not (verl_root / "ppo_trainer.yaml").is_file():
+        raise FileNotFoundError(f"veRL distribution is missing ppo_trainer.yaml: {verl_root}")
+    if not (agl_root / "config.yaml").is_file():
+        raise FileNotFoundError(f"Agent Lightning distribution is missing config.yaml: {agl_root}")
+    with initialize_config_dir(config_dir=str(verl_root), version_base=None):
+        base = compose(config_name="ppo_trainer")
+    overlay = OmegaConf.load(agl_root / "config.yaml")
+    # The original AGL defaults are ["ppo_trainer", "_self_"]. Hydra and defaults
+    # entries are parser directives, not runtime trainer configuration.
+    if list(overlay.defaults) != ["ppo_trainer", "_self_"]:
+        raise ValueError(f"Unexpected Agent Lightning config composition order: {overlay.defaults}")
+    del overlay["defaults"]
+    if "hydra" in overlay:
+        del overlay["hydra"]
     OmegaConf.set_struct(base, False)
     config = OmegaConf.merge(
-        base, OmegaConf.create(default_overrides(args)),
+        base, overlay, OmegaConf.create(default_overrides(args)),
         OmegaConf.from_dotlist(list(dotlist)),
     )
-    # Enforce the central invariant AFTER all overrides have been applied.
     if int(config.data.max_prompt_length) != int(config.agentlightning.trace_aggregator.trajectory_max_prompt_length):
         raise ValueError("prompt length and trajectory aggregator prompt budget must match")
     if int(config.data.max_response_length) != int(config.agentlightning.trace_aggregator.trajectory_max_response_length):
@@ -131,7 +153,6 @@ def build_config(args, dotlist: Sequence[str]) -> Any:
     if str(config.algorithm.adv_estimator).lower() != "grpo":
         raise ValueError("this project requires GRPO; do not override the advantage estimator")
     return config
-
 
 def validate_training_dataset(train_rows, val_rows, args) -> dict:
     if not train_rows or not val_rows:
